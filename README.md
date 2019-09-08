@@ -1,0 +1,2 @@
+# image_augments
+基于OpenCV3和Numpy的图像增强工具，可以预先处理也可以搭配dataloader作为数据生成器使用
