@@ -1,5 +1,9 @@
 import torch.nn.functional as F
-
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from utils.blocks import bn, relu, ResBlock, BLD, Aspp, AsppPooling
+import math
 from utils.google_utils import *
 from utils.parse_config import *
 from utils.utils import *
@@ -24,23 +28,29 @@ def create_modules(module_defs, img_size, arc):
             filters = int(mdef['filters'])
             kernel_size = int(mdef['size'])
             pad = (kernel_size - 1) // 2 if int(mdef['pad']) else 0
-            modules.add_module('Conv2d', nn.Conv2d(in_channels=output_filters[-1],
-                                                   out_channels=filters,
-                                                   kernel_size=kernel_size,
-                                                   stride=int(mdef['stride']),
-                                                   padding=pad,
-                                                   bias=not bn))
+            modules.add_module(
+                'Conv2d',
+                nn.Conv2d(in_channels=output_filters[-1],
+                          out_channels=filters,
+                          kernel_size=kernel_size,
+                          stride=int(mdef['stride']),
+                          padding=pad,
+                          bias=not bn))
             if bn:
-                modules.add_module('BatchNorm2d', nn.BatchNorm2d(filters, momentum=0.1))
+                modules.add_module('BatchNorm2d',
+                                   nn.BatchNorm2d(filters, momentum=0.1))
             if mdef['activation'] == 'leaky':  # TODO: activation study https://github.com/ultralytics/yolov3/issues/441
-                modules.add_module('activation', nn.LeakyReLU(0.1, inplace=True))
+                modules.add_module('activation', nn.LeakyReLU(0.1,
+                                                              inplace=True))
                 # modules.add_module('activation', nn.PReLU(num_parameters=1, init=0.10))
                 # modules.add_module('activation', Swish())
 
         elif mdef['type'] == 'maxpool':
             kernel_size = int(mdef['size'])
             stride = int(mdef['stride'])
-            maxpool = nn.MaxPool2d(kernel_size=kernel_size, stride=stride, padding=int((kernel_size - 1) // 2))
+            maxpool = nn.MaxPool2d(kernel_size=kernel_size,
+                                   stride=stride,
+                                   padding=int((kernel_size - 1) // 2))
             if kernel_size == 2 and stride == 1:  # yolov3-tiny
                 modules.add_module('ZeroPad2d', nn.ZeroPad2d((0, 1, 0, 1)))
                 modules.add_module('MaxPool2d', maxpool)
@@ -48,16 +58,20 @@ def create_modules(module_defs, img_size, arc):
                 modules = maxpool
 
         elif mdef['type'] == 'upsample':
-            modules = nn.Upsample(scale_factor=int(mdef['stride']), mode='nearest')
+            modules = nn.Upsample(scale_factor=int(mdef['stride']),
+                                  mode='nearest')
 
-        elif mdef['type'] == 'route':  # nn.Sequential() placeholder for 'route' layer
+        elif mdef[
+                'type'] == 'route':  # nn.Sequential() placeholder for 'route' layer
             layers = [int(x) for x in mdef['layers'].split(',')]
-            filters = sum([output_filters[i + 1 if i > 0 else i] for i in layers])
+            filters = sum(
+                [output_filters[i + 1 if i > 0 else i] for i in layers])
             routs.extend([l if l > 0 else l + i for l in layers])
             # if mdef[i+1]['type'] == 'reorg3d':
             #     modules = nn.Upsample(scale_factor=1/float(mdef[i+1]['stride']), mode='nearest')  # reorg3d
 
-        elif mdef['type'] == 'shortcut':  # nn.Sequential() placeholder for 'shortcut' layer
+        elif mdef[
+                'type'] == 'shortcut':  # nn.Sequential() placeholder for 'shortcut' layer
             filters = output_filters[int(mdef['from'])]
             layer = int(mdef['from'])
             routs.extend([i + layer if layer < 0 else layer])
@@ -70,11 +84,12 @@ def create_modules(module_defs, img_size, arc):
         elif mdef['type'] == 'yolo':
             yolo_index += 1
             mask = [int(x) for x in mdef['mask'].split(',')]  # anchor mask
-            modules = YOLOLayer(anchors=mdef['anchors'][mask],  # anchor list
-                                nc=int(mdef['classes']),  # number of classes
-                                img_size=img_size,  # (416, 416)
-                                yolo_index=yolo_index,  # 0, 1 or 2
-                                arc=arc)  # yolo architecture
+            modules = YOLOLayer(
+                anchors=mdef['anchors'][mask],  # anchor list
+                nc=int(mdef['classes']),  # number of classes
+                img_size=img_size,  # (416, 416)
+                yolo_index=yolo_index,  # 0, 1 or 2
+                arc=arc)  # yolo architecture
 
             # Initialize preceding Conv2d() bias (https://arxiv.org/pdf/1708.02002.pdf section 3.3)
             try:
@@ -93,7 +108,8 @@ def create_modules(module_defs, img_size, arc):
                 elif arc == 'uFCE':  # unified FocalCE (64 cls, 1 background + 80 classes)
                     b = [7.7, -1.1]
 
-                bias = module_list[-1][0].bias.view(len(mask), -1)  # 255 to 3x85
+                bias = module_list[-1][0].bias.view(len(mask),
+                                                    -1)  # 255 to 3x85
                 bias[:, 4] += b[0] - bias[:, 4].mean()  # obj
                 bias[:, 5:] += b[1] - bias[:, 5:].mean()  # cls
                 # bias = torch.load('weights/yolov3-spp.bias.pt')[yolo_index]  # list of tensors [3x85, 3x85, 3x85]
@@ -146,7 +162,8 @@ class YOLOLayer(nn.Module):
                 create_grids(self, img_size, (nx, ny), p.device, p.dtype)
 
         # p.view(bs, 255, 13, 13) -- > (bs, 3, 13, 13, 85)  # (bs, anchors, grid, grid, classes + xywh)
-        p = p.view(bs, self.na, self.nc + 5, self.ny, self.nx).permute(0, 1, 3, 4, 2).contiguous()  # prediction
+        p = p.view(bs, self.na, self.nc + 5, self.ny,
+                   self.nx).permute(0, 1, 3, 4, 2).contiguous()  # prediction
 
         if self.training:
             return p
@@ -154,8 +171,10 @@ class YOLOLayer(nn.Module):
         elif ONNX_EXPORT:
             # Constants CAN NOT BE BROADCAST, ensure correct shape!
             ngu = self.ng.repeat((1, self.na * self.nx * self.ny, 1))
-            grid_xy = self.grid_xy.repeat((1, self.na, 1, 1, 1)).view((1, -1, 2))
-            anchor_wh = self.anchor_wh.repeat((1, 1, self.nx, self.ny, 1)).view((1, -1, 2)) / ngu
+            grid_xy = self.grid_xy.repeat((1, self.na, 1, 1, 1)).view(
+                (1, -1, 2))
+            anchor_wh = self.anchor_wh.repeat(
+                (1, 1, self.nx, self.ny, 1)).view((1, -1, 2)) / ngu
 
             p = p.view(-1, 5 + self.nc)
             xy = torch.sigmoid(p[..., 0:2]) + grid_xy[0]  # x, y
@@ -180,7 +199,8 @@ class YOLOLayer(nn.Module):
             # s = 1.5  # scale_xy  (pxy = pxy * s - (s - 1) / 2)
             io = p.clone()  # inference output
             io[..., 0:2] = torch.sigmoid(io[..., 0:2]) + self.grid_xy  # xy
-            io[..., 2:4] = torch.exp(io[..., 2:4]) * self.anchor_wh  # wh yolo method
+            io[..., 2:4] = torch.exp(
+                io[..., 2:4]) * self.anchor_wh  # wh yolo method
             # io[..., 2:4] = ((torch.sigmoid(io[..., 2:4]) * 2) ** 3) * self.anchor_wh  # wh power method
             io[..., :4] *= self.stride
 
@@ -194,7 +214,8 @@ class YOLOLayer(nn.Module):
                 io[..., 4] = 1
 
             if self.nc == 1:
-                io[..., 5] = 1  # single-class model https://github.com/ultralytics/yolov3/issues/235
+                io[...,
+                   5] = 1  # single-class model https://github.com/ultralytics/yolov3/issues/235
 
             # reshape from [1, 3, 13, 13, 85] to [1, 507, 85]
             return io.view(bs, -1, 5 + self.nc), p
@@ -205,46 +226,150 @@ class Darknet(nn.Module):
 
     def __init__(self, cfg, img_size=(416, 416), arc='default'):
         super(Darknet, self).__init__()
+        # full pre-activation
+        self.conv1 = nn.Conv2d(3, 32, 7, 1, 3)
+        self.block1 = nn.Sequential(ResBlock(32, 64, stride=2))
+        self.block2 = nn.Sequential(
+            ResBlock(64, 128, stride=2),
+            ResBlock(128, 128),
+            ResBlock(128, 128, dilation=6),
+            ResBlock(128, 128),
+        )
+        self.block3 = nn.Sequential(
+            ResBlock(128, 256, stride=2),
+            ResBlock(256, 256),
+            ResBlock(256, 256, dilation=6),
+            ResBlock(256, 256),
+            ResBlock(256, 256, dilation=12),
+            ResBlock(256, 256),
+            ResBlock(256, 256, dilation=18),
+            ResBlock(256, 256),
+        )
+        self.block4 = nn.Sequential(
+            ResBlock(256, 512, stride=2),
+            ResBlock(512, 512),
+            ResBlock(512, 512, dilation=6),
+            ResBlock(512, 512),
+            ResBlock(512, 512, dilation=12),
+            ResBlock(512, 512),
+            ResBlock(512, 512, dilation=18),
+            ResBlock(512, 512),
+            ResBlock(512, 512, dilation=30),
+            ResBlock(512, 512),
+        )
+        self.block5 = nn.Sequential(
+            ResBlock(512, 1024, stride=2),
+            ResBlock(1024, 1024),
+            ResBlock(1024, 1024, dilation=6),
+            ResBlock(1024, 1024, dilation=12),
+            ResBlock(1024, 1024, dilation=18),
+            ResBlock(1024, 1024),
+        )
 
-        self.module_defs = parse_model_cfg(cfg)
-        self.module_list, self.routs = create_modules(self.module_defs, img_size, arc)
-        self.yolo_layers = get_yolo_layers(self)
+        self.high_level_block = nn.Sequential(
+            ResBlock(1024, 1024),
+            ResBlock(1024, 1024, dilation=6),
+            ResBlock(1024, 1024),
+        )
+        self.high_level_final = nn.Sequential(ResBlock(1024, 1024), bn(1024),
+                                              relu, nn.Conv2d(1024, 678, 1))
+        self.high_level_yolo = YOLOLayer(
+            anchors=np.float32([[116, 90], [156, 198], [373, 326]]),  # anchor list
+            nc=221,  # number of classes
+            img_size=img_size,  # (416, 416)
+            yolo_index=0,  # 0, 1 or 2
+            arc=arc)  # yolo architecture
+
+        self.high2middle = nn.Sequential(ResBlock(1024, 512), )
+        self.middle_level_block = nn.Sequential(
+            ResBlock(512, 512),
+            ResBlock(512, 512, dilation=6),
+            ResBlock(512, 512),
+        )
+        self.middle_level_final = nn.Sequential(ResBlock(512, 512), bn(512),
+                                                relu, nn.Conv2d(512, 678, 1))
+        self.middle_level_yolo = YOLOLayer(
+            anchors=np.float32([[30, 61], [62, 45], [59, 119]]),  # anchor list
+            nc=221,  # number of classes
+            img_size=img_size,  # (416, 416)
+            yolo_index=1,  # 0, 1 or 2
+            arc=arc)  # yolo architecture
+
+        self.middle2low = nn.Sequential(ResBlock(512, 256), )
+        self.low_level_block = nn.Sequential(
+            ResBlock(256, 256),
+            ResBlock(256, 256, dilation=6),
+            ResBlock(256, 256),
+        )
+        self.low_level_final = nn.Sequential(ResBlock(256, 256), bn(256), relu,
+                                             nn.Conv2d(256, 678, 1))
+        self.low_level_yolo = YOLOLayer(
+            anchors=np.float32([[10, 13], [16, 30], [33, 23]]),  # anchor list
+            nc=221,  # number of classes
+            img_size=img_size,  # (416, 416)
+            yolo_index=2,  # 0, 1 or 2
+            arc=arc)  # yolo architecture
+
+        # self.module_list, self.routs = create_modules(self.module_defs, img_size, arc)
+        # self.yolo_layers = get_yolo_layers(self)
+        self.yolo_layers = nn.ModuleList([
+            self.high_level_yolo, self.middle_level_yolo, self.low_level_yolo
+        ])
 
         # Darknet Header https://github.com/AlexeyAB/darknet/issues/2914#issuecomment-496675346
-        self.version = np.array([0, 2, 5], dtype=np.int32)  # (int32) version info: major, minor, revision
-        self.seen = np.array([0], dtype=np.int64)  # (int64) number of images seen during training
+        self.version = np.array(
+            [0, 2, 5],
+            dtype=np.int32)  # (int32) version info: major, minor, revision
+        self.seen = np.array(
+            [0],
+            dtype=np.int64)  # (int64) number of images seen during training
 
     def forward(self, x, var=None):
         img_size = x.shape[-2:]
         layer_outputs = []
         output = []
+        x = self.conv1(x)
+        x = self.block1(x)
+        x = self.block2(x)
+        x = self.block3(x)
+        low_level_feat = x
+        x = self.block4(x)
+        middle_level_feat = x
+        x = self.block5(x)
+        high_level_feat = x + F.adaptive_avg_pool2d(x, (1, 1))
+        high_level_feat = self.high_level_block(high_level_feat)
+        high_output = self.high_level_final(high_level_feat)
+        high_output = self.high_level_yolo(high_output, img_size)
+        output.append(high_output)
 
-        for i, (mdef, module) in enumerate(zip(self.module_defs, self.module_list)):
-            mtype = mdef['type']
-            if mtype in ['convolutional', 'upsample', 'maxpool']:
-                x = module(x)
-            elif mtype == 'route':
-                layers = [int(x) for x in mdef['layers'].split(',')]
-                if len(layers) == 1:
-                    x = layer_outputs[layers[0]]
-                else:
-                    try:
-                        x = torch.cat([layer_outputs[i] for i in layers], 1)
-                    except:  # apply stride 2 for darknet reorg layer
-                        layer_outputs[layers[1]] = F.interpolate(layer_outputs[layers[1]], scale_factor=[0.5, 0.5])
-                        x = torch.cat([layer_outputs[i] for i in layers], 1)
-                    # print(''), [print(layer_outputs[i].shape) for i in layers], print(x.shape)
-            elif mtype == 'shortcut':
-                x = x + layer_outputs[int(mdef['from'])]
-            elif mtype == 'yolo':
-                x = module(x, img_size)
-                output.append(x)
-            layer_outputs.append(x if i in self.routs else [])
+        high_level_feat = self.high2middle(high_level_feat)
+        high_level_feat = F.interpolate(high_level_feat,
+                                        scale_factor=2,
+                                        mode='bilinear',
+                                        align_corners=True)
+        middle_level_feat = middle_level_feat + high_level_feat
+        middle_level_feat = self.middle_level_block(middle_level_feat)
+        middle_output = self.middle_level_final(middle_level_feat)
+        middle_output = self.middle_level_yolo(middle_output, img_size)
+        output.append(middle_output)
+
+        low_level_feat = low_level_feat + F.adaptive_avg_pool2d(low_level_feat, (1, 1))
+        middle_level_feat = self.middle2low(middle_level_feat)
+        middle_level_feat = F.interpolate(middle_level_feat,
+                                          scale_factor=2,
+                                          mode='bilinear',
+                                          align_corners=True)
+        low_level_feat = low_level_feat + middle_level_feat
+        low_level_feat = self.low_level_block(low_level_feat)
+        low_output = self.low_level_final(low_level_feat)
+        low_output = self.low_level_yolo(low_output, img_size)
+        output.append(low_output)
 
         if self.training:
             return output
         elif ONNX_EXPORT:
-            output = torch.cat(output, 1)  # cat 3 layers 85 x (507, 2028, 8112) to 85 x 10647
+            output = torch.cat(
+                output, 1)  # cat 3 layers 85 x (507, 2028, 8112) to 85 x 10647
             nc = self.module_list[self.yolo_layers[0]].nc  # number of classes
             return output[5:5 + nc].t(), output[:4].t()  # ONNX scores, boxes
         else:
@@ -269,21 +394,28 @@ class Darknet(nn.Module):
 
 
 def get_yolo_layers(model):
-    return [i for i, x in enumerate(model.module_defs) if x['type'] == 'yolo']  # [82, 94, 106] for yolov3
+    return [i for i, x in enumerate(model.module_defs)
+            if x['type'] == 'yolo']  # [82, 94, 106] for yolov3
 
 
-def create_grids(self, img_size=416, ng=(13, 13), device='cpu', type=torch.float32):
+def create_grids(self,
+                 img_size=416,
+                 ng=(13, 13),
+                 device='cpu',
+                 type=torch.float32):
     nx, ny = ng  # x and y grid size
     self.img_size = max(img_size)
     self.stride = self.img_size / max(ng)
 
     # build xy offsets
     yv, xv = torch.meshgrid([torch.arange(ny), torch.arange(nx)])
-    self.grid_xy = torch.stack((xv, yv), 2).to(device).type(type).view((1, 1, ny, nx, 2))
+    self.grid_xy = torch.stack((xv, yv), 2).to(device).type(type).view(
+        (1, 1, ny, nx, 2))
 
     # build wh gains
     self.anchor_vec = self.anchors.to(device) / self.stride
-    self.anchor_wh = self.anchor_vec.view(1, self.na, 1, 1, 2).to(device).type(type)
+    self.anchor_wh = self.anchor_vec.view(1, self.na, 1, 1,
+                                          2).to(device).type(type)
     self.ng = torch.Tensor(ng).to(device)
     self.nx = nx
     self.ny = ny
@@ -302,13 +434,18 @@ def load_darknet_weights(self, weights, cutoff=-1):
     # Read weights file
     with open(weights, 'rb') as f:
         # Read Header https://github.com/AlexeyAB/darknet/issues/2914#issuecomment-496675346
-        self.version = np.fromfile(f, dtype=np.int32, count=3)  # (int32) version info: major, minor, revision
-        self.seen = np.fromfile(f, dtype=np.int64, count=1)  # (int64) number of images seen during training
+        self.version = np.fromfile(
+            f, dtype=np.int32,
+            count=3)  # (int32) version info: major, minor, revision
+        self.seen = np.fromfile(
+            f, dtype=np.int64,
+            count=1)  # (int64) number of images seen during training
 
         weights = np.fromfile(f, dtype=np.float32)  # The rest are weights
 
     ptr = 0
-    for i, (mdef, module) in enumerate(zip(self.module_defs[:cutoff], self.module_list[:cutoff])):
+    for i, (mdef, module) in enumerate(
+            zip(self.module_defs[:cutoff], self.module_list[:cutoff])):
         if mdef['type'] == 'convolutional':
             conv_layer = module[0]
             if mdef['batch_normalize']:
@@ -316,30 +453,36 @@ def load_darknet_weights(self, weights, cutoff=-1):
                 bn_layer = module[1]
                 num_b = bn_layer.bias.numel()  # Number of biases
                 # Bias
-                bn_b = torch.from_numpy(weights[ptr:ptr + num_b]).view_as(bn_layer.bias)
+                bn_b = torch.from_numpy(weights[ptr:ptr + num_b]).view_as(
+                    bn_layer.bias)
                 bn_layer.bias.data.copy_(bn_b)
                 ptr += num_b
                 # Weight
-                bn_w = torch.from_numpy(weights[ptr:ptr + num_b]).view_as(bn_layer.weight)
+                bn_w = torch.from_numpy(weights[ptr:ptr + num_b]).view_as(
+                    bn_layer.weight)
                 bn_layer.weight.data.copy_(bn_w)
                 ptr += num_b
                 # Running Mean
-                bn_rm = torch.from_numpy(weights[ptr:ptr + num_b]).view_as(bn_layer.running_mean)
+                bn_rm = torch.from_numpy(weights[ptr:ptr + num_b]).view_as(
+                    bn_layer.running_mean)
                 bn_layer.running_mean.data.copy_(bn_rm)
                 ptr += num_b
                 # Running Var
-                bn_rv = torch.from_numpy(weights[ptr:ptr + num_b]).view_as(bn_layer.running_var)
+                bn_rv = torch.from_numpy(weights[ptr:ptr + num_b]).view_as(
+                    bn_layer.running_var)
                 bn_layer.running_var.data.copy_(bn_rv)
                 ptr += num_b
             else:
                 # Load conv. bias
                 num_b = conv_layer.bias.numel()
-                conv_b = torch.from_numpy(weights[ptr:ptr + num_b]).view_as(conv_layer.bias)
+                conv_b = torch.from_numpy(weights[ptr:ptr + num_b]).view_as(
+                    conv_layer.bias)
                 conv_layer.bias.data.copy_(conv_b)
                 ptr += num_b
             # Load conv. weights
             num_w = conv_layer.weight.numel()
-            conv_w = torch.from_numpy(weights[ptr:ptr + num_w]).view_as(conv_layer.weight)
+            conv_w = torch.from_numpy(weights[ptr:ptr + num_w]).view_as(
+                conv_layer.weight)
             conv_layer.weight.data.copy_(conv_w)
             ptr += num_w
 
@@ -355,7 +498,8 @@ def save_weights(self, path='model.weights', cutoff=-1):
         self.seen.tofile(f)  # (int64) number of images seen during training
 
         # Iterate through layers
-        for i, (mdef, module) in enumerate(zip(self.module_defs[:cutoff], self.module_list[:cutoff])):
+        for i, (mdef, module) in enumerate(
+                zip(self.module_defs[:cutoff], self.module_list[:cutoff])):
             if mdef['type'] == 'convolutional':
                 conv_layer = module[0]
                 # If batch norm, load bn first
@@ -388,11 +532,13 @@ def convert(cfg='cfg/yolov3-spp.cfg', weights='weights/yolov3-spp.weights'):
     elif weights.endswith('.weights'):  # darknet format
         _ = load_darknet_weights(model, weights)
 
-        chkpt = {'epoch': -1,
-                 'best_fitness': None,
-                 'training_results': None,
-                 'model': model.state_dict(),
-                 'optimizer': None}
+        chkpt = {
+            'epoch': -1,
+            'best_fitness': None,
+            'training_results': None,
+            'model': model.state_dict(),
+            'optimizer': None
+        }
 
         torch.save(chkpt, 'converted.pt')
         print("Success: converted '%s' to 'converted.pt'" % weights)
@@ -409,17 +555,23 @@ def attempt_download(weights):
         file = Path(weights).name
 
         if file == 'yolov3-spp.weights':
-            gdrive_download(id='1oPCHKsM2JpM-zgyepQciGli9X0MTsJCO', name=weights)
+            gdrive_download(id='1oPCHKsM2JpM-zgyepQciGli9X0MTsJCO',
+                            name=weights)
         elif file == 'yolov3-spp.pt':
-            gdrive_download(id='1vFlbJ_dXPvtwaLLOu-twnjK4exdFiQ73', name=weights)
+            gdrive_download(id='1vFlbJ_dXPvtwaLLOu-twnjK4exdFiQ73',
+                            name=weights)
         elif file == 'yolov3.pt':
-            gdrive_download(id='11uy0ybbOXA2hc-NJkJbbbkDwNX1QZDlz', name=weights)
+            gdrive_download(id='11uy0ybbOXA2hc-NJkJbbbkDwNX1QZDlz',
+                            name=weights)
         elif file == 'yolov3-tiny.pt':
-            gdrive_download(id='1qKSgejNeNczgNNiCn9ZF_o55GFk1DjY_', name=weights)
+            gdrive_download(id='1qKSgejNeNczgNNiCn9ZF_o55GFk1DjY_',
+                            name=weights)
         elif file == 'darknet53.conv.74':
-            gdrive_download(id='18xqvs_uwAqfTXp-LJCYLYNHBOcrwbrp0', name=weights)
+            gdrive_download(id='18xqvs_uwAqfTXp-LJCYLYNHBOcrwbrp0',
+                            name=weights)
         elif file == 'yolov3-tiny.conv.15':
-            gdrive_download(id='140PnSedCsGGgu3rOD6Ez4oI6cdDzerLC', name=weights)
+            gdrive_download(id='140PnSedCsGGgu3rOD6Ez4oI6cdDzerLC',
+                            name=weights)
 
         else:
             try:  # download from pjreddie.com
@@ -430,4 +582,5 @@ def attempt_download(weights):
                 print(msg)
                 os.system('rm ' + weights)  # remove partial downloads
 
-        assert os.path.exists(weights), msg  # download missing weights from Google Drive
+        assert os.path.exists(
+            weights), msg  # download missing weights from Google Drive

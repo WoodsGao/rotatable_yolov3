@@ -8,6 +8,7 @@ import test  # import test.py to get mAP after each epoch
 from models import *
 from utils.datasets import *
 from utils.utils import *
+from utils.optim import AdaBoundW
 
 mixed_precision = True
 try:  # Mixed precision training https://github.com/NVIDIA/apex
@@ -55,7 +56,6 @@ def train():
     batch_size = opt.batch_size
     accumulate = opt.accumulate  # effective bs = batch_size * accumulate = 16 * 4 = 64
     weights = opt.weights  # initial training weights
-
     if 'pw' not in opt.arc:  # remove BCELoss positive weights
         hyp['cls_pw'] = 1.
         hyp['obj_pw'] = 1.
@@ -90,14 +90,15 @@ def train():
         else:
             pg0 += [v]  # parameter group 0
 
-    if opt.adam:
-        optimizer = optim.Adam(pg0, lr=hyp['lr0'])
-        # optimizer = AdaBound(pg0, lr=hyp['lr0'], final_lr=0.1)
-    else:
-        optimizer = optim.SGD(pg0, lr=hyp['lr0'], momentum=hyp['momentum'], nesterov=True)
-    optimizer.add_param_group({'params': pg1, 'weight_decay': hyp['weight_decay']})  # add pg1 with weight_decay
-    del pg0, pg1
-
+    # if opt.adam:
+    #     optimizer = optim.Adam(pg0, lr=hyp['lr0'])
+    #     # optimizer = AdaBound(pg0, lr=hyp['lr0'], final_lr=0.1)
+    # else:
+    #     optimizer = optim.SGD(pg0, lr=hyp['lr0'], momentum=hyp['momentum'], nesterov=True)
+    # # optimizer.add_param_group({'params': pg1, 'weight_decay': hyp['weight_decay']})  # add pg1 with weight_decay
+    # del pg0, pg1
+    optimizer = AdaBoundW(model.parameters(), lr=1e-3, weight_decay=5e-4)
+    # optimizer = optim.Adam(pg0, lr=hyp['lr0'])
     cutoff = -1  # backbone reaches to cutoff layer
     start_epoch = 0
     best_fitness = float('inf')
@@ -116,9 +117,9 @@ def train():
         #    model.load_state_dict(chkpt['model'])
 
         # load optimizer
-        if chkpt['optimizer'] is not None:
-            optimizer.load_state_dict(chkpt['optimizer'])
-            best_fitness = chkpt['best_fitness']
+        # if chkpt['optimizer'] is not None:
+        #     optimizer.load_state_dict(chkpt['optimizer'])
+        #     best_fitness = chkpt['best_fitness']
 
         # load results
         if chkpt.get('training_results') is not None:
@@ -156,8 +157,8 @@ def train():
     # lf = lambda x: 1 - 10 ** (hyp['lrf'] * (1 - x / epochs))  # inverse exp ramp
     # scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
     # scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=range(59, 70, 1), gamma=0.8)  # gradual fall to 0.1*lr0
-    scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=[round(opt.epochs * x) for x in [0.8, 0.9]], gamma=0.1)
-    scheduler.last_epoch = start_epoch - 1
+    # scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=[round(opt.epochs * x) for x in [0.8, 0.9]], gamma=0.1)
+    # scheduler.last_epoch = start_epoch - 1
 
     # # Plot lr schedule
     # y = []
@@ -249,9 +250,9 @@ def train():
             # Plot images with bounding boxes
             if ni == 0:
                 fname = 'train_batch%g.jpg' % i
-                plot_images(imgs=imgs, targets=targets, paths=paths, fname=fname)
-                if tb_writer:
-                    tb_writer.add_image(fname, cv2.imread(fname)[:, :, ::-1], dataformats='HWC')
+                # plot_images(imgs=imgs, targets=targets, paths=paths, fname=fname)
+                # if tb_writer:
+                #     tb_writer.add_image(fname, cv2.imread(fname)[:, :, ::-1], dataformats='HWC')
 
             # Hyperparameter burn-in
             # n_burn = nb - 1  # min(nb // 5 + 1, 1000)  # number of burn-in batches
@@ -298,7 +299,7 @@ def train():
             # end batch ------------------------------------------------------------------------------------------------
 
         # Update scheduler
-        scheduler.step()
+        # scheduler.step()
 
         # Process epoch results
         final_epoch = epoch + 1 == epochs
@@ -391,10 +392,10 @@ def prebias():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--epochs', type=int, default=273)  # 500200 batches at bs 16, 117263 images = 273 epochs
-    parser.add_argument('--batch-size', type=int, default=32)  # effective bs = batch_size * accumulate = 16 * 4 = 64
-    parser.add_argument('--accumulate', type=int, default=2, help='batches to accumulate before optimizing')
+    parser.add_argument('--batch-size', type=int, default=4)  # effective bs = batch_size * accumulate = 16 * 4 = 64
+    parser.add_argument('--accumulate', type=int, default=16, help='batches to accumulate before optimizing')
     parser.add_argument('--cfg', type=str, default='cfg/yolov3-spp.cfg', help='cfg file path')
-    parser.add_argument('--data', type=str, default='data/coco.data', help='*.data file path')
+    parser.add_argument('--data', type=str, default='tt100k.data', help='*.data file path')
     parser.add_argument('--multi-scale', action='store_true', help='adjust (67% - 150%) img_size every 10 batches')
     parser.add_argument('--img-size', type=int, default=416, help='inference size (pixels)')
     parser.add_argument('--rect', action='store_true', help='rectangular training')
