@@ -13,7 +13,7 @@ import torch.nn as nn
 from tqdm import tqdm
 
 from . import torch_utils  # , google_utils
-
+from .loss import FocalBCELoss
 matplotlib.rc('font', **{'size': 11})
 
 # Set printoptions
@@ -318,10 +318,7 @@ def compute_loss(p, targets, model):  # predictions, targets, model
     BCEobj = nn.BCEWithLogitsLoss(pos_weight=ft([h['obj_pw']]))
     BCE = nn.BCEWithLogitsLoss()
     CE = nn.CrossEntropyLoss()  # weight=model.class_weights
-
-    if 'F' in arc:  # add focal loss
-        g = h['fl_gamma']
-        BCEcls, BCEobj, BCE, CE = FocalLoss(BCEcls, g), FocalLoss(BCEobj, g), FocalLoss(BCE, g), FocalLoss(CE, g)
+    focal = FocalBCELoss()
 
     # Compute losses
     for i, pi in enumerate(p):  # layer index, layer predictions
@@ -341,10 +338,10 @@ def compute_loss(p, targets, model):  # predictions, targets, model
             giou = bbox_iou(pbox.t(), tbox[i], x1y1x2y2=False, GIoU=True)  # giou computation
             lbox += (1.0 - giou).mean()  # giou loss
 
-            if 'default' in arc and model.nc > 1:  # cls loss (only if multiple classes)
+            if model.nc > 1:  # cls loss (only if multiple classes)
                 t = torch.zeros_like(ps[:, 5:])  # targets
                 t[range(nb), tcls[i]] = 1.0
-                lcls += BCEcls(ps[:, 5:], t)  # BCE
+                lcls += focal(ps[:, 5:], t).mean()  # BCE
                 # lcls += CE(ps[:, 5:], tcls[i])  # CE
 
                 # Instance-class weighting (use with reduction='none')
@@ -356,20 +353,7 @@ def compute_loss(p, targets, model):  # predictions, targets, model
             # with open('targets.txt', 'a') as file:
             #     [file.write('%11.5g ' * 4 % tuple(x) + '\n') for x in torch.cat((txy[i], twh[i]), 1)]
 
-        if 'default' in arc:  # separate obj and cls
-            lobj += BCEobj(pi[..., 4], tobj)  # obj loss
-
-        elif 'BCE' in arc:  # unified BCE (80 classes)
-            t = torch.zeros_like(pi[..., 5:])  # targets
-            if nb:
-                t[b, a, gj, gi, tcls[i]] = 1.0
-            lobj += BCE(pi[..., 5:], t)
-
-        elif 'CE' in arc:  # unified CE (1 background + 80 classes)
-            t = torch.zeros_like(pi[..., 0], dtype=torch.long)  # targets
-            if nb:
-                t[b, a, gj, gi] = tcls[i] + 1
-            lcls += CE(pi[..., 4:].view(-1, model.nc + 1), t.view(-1))
+        lobj += focal(pi[..., 4], tobj).mean()  # obj loss
 
     lbox *= h['giou']
     lobj *= h['obj']
@@ -383,13 +367,13 @@ def build_targets(model, targets):
 
     nt = len(targets)
     tcls, tbox, indices, av = [], [], [], []
-    multi_gpu = type(model) in (nn.parallel.DataParallel, nn.parallel.DistributedDataParallel)
+    # multi_gpu = type(model) in (nn.parallel.DataParallel, nn.parallel.DistributedDataParallel)
     for i in model.yolo_layers:
         # get number of grid points and anchor vec for this yolo layer
-        if multi_gpu:
-            ng, anchor_vec = model.module.module_list[i].ng, model.module.module_list[i].anchor_vec
-        else:
-            ng, anchor_vec = model.module_list[i].ng, model.module_list[i].anchor_vec
+        # if multi_gpu:
+        #     ng, anchor_vec = model.module.module_list[i].ng, model.module.module_list[i].anchor_vec
+        # else:
+        ng, anchor_vec = i.ng, i.anchor_vec
 
         # iou of targets-anchors
         t, a = targets, []

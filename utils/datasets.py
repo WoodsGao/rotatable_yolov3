@@ -587,7 +587,7 @@ def load_mosaic(self, index):
                 labels[:, 3] = w * (x[:, 1] + x[:, 3] / 2) + padw
                 labels[:, 4] = h * (x[:, 2] + x[:, 4] / 2) + padh
 
-            labels4.append(labels)
+                labels4.append(labels)
     if len(labels4):
         labels4 = np.concatenate(labels4, 0)
 
