@@ -272,10 +272,10 @@ class Darknet(nn.Module):
             ResBlock(1024, 1024),
         )
         self.high_level_final = nn.Sequential(ResBlock(1024, 1024), bn(1024),
-                                              relu, nn.Conv2d(1024, 678, 1))
+                                              relu, nn.Conv2d(1024, 6, 1))
         self.high_level_yolo = YOLOLayer(
-            anchors=np.float32([[116, 90], [156, 198], [373, 326]]),  # anchor list
-            nc=221,  # number of classes
+            anchors=np.float32([[116, 90]]),  # anchor list
+            nc=1,  # number of classes
             img_size=img_size,  # (416, 416)
             yolo_index=0,  # 0, 1 or 2
             arc=arc)  # yolo architecture
@@ -287,10 +287,10 @@ class Darknet(nn.Module):
             ResBlock(512, 512),
         )
         self.middle_level_final = nn.Sequential(ResBlock(512, 512), bn(512),
-                                                relu, nn.Conv2d(512, 678, 1))
+                                                relu, nn.Conv2d(512, 12, 1))
         self.middle_level_yolo = YOLOLayer(
-            anchors=np.float32([[30, 61], [62, 45], [59, 119]]),  # anchor list
-            nc=221,  # number of classes
+            anchors=np.float32([[30, 30], [45, 45]]),  # anchor list
+            nc=1,  # number of classes
             img_size=img_size,  # (416, 416)
             yolo_index=1,  # 0, 1 or 2
             arc=arc)  # yolo architecture
@@ -302,10 +302,10 @@ class Darknet(nn.Module):
             ResBlock(256, 256),
         )
         self.low_level_final = nn.Sequential(ResBlock(256, 256), bn(256), relu,
-                                             nn.Conv2d(256, 678, 1))
+                                             nn.Conv2d(256, 24, 1))
         self.low_level_yolo = YOLOLayer(
-            anchors=np.float32([[10, 13], [16, 30], [33, 23]]),  # anchor list
-            nc=221,  # number of classes
+            anchors=np.float32([[5, 5], [10, 10], [15, 15], [25, 25]]),  # anchor list
+            nc=1,  # number of classes
             img_size=img_size,  # (416, 416)
             yolo_index=2,  # 0, 1 or 2
             arc=arc)  # yolo architecture
@@ -326,7 +326,6 @@ class Darknet(nn.Module):
 
     def forward(self, x, var=None):
         img_size = x.shape[-2:]
-        layer_outputs = []
         output = []
         x = self.conv1(x)
         x = self.block1(x)
@@ -336,7 +335,7 @@ class Darknet(nn.Module):
         x = self.block4(x)
         middle_level_feat = x
         x = self.block5(x)
-        high_level_feat = x + F.adaptive_avg_pool2d(x, (1, 1))
+        high_level_feat = x
         high_level_feat = self.high_level_block(high_level_feat)
         high_output = self.high_level_final(high_level_feat)
         high_output = self.high_level_yolo(high_output, img_size)
@@ -353,7 +352,7 @@ class Darknet(nn.Module):
         middle_output = self.middle_level_yolo(middle_output, img_size)
         output.append(middle_output)
 
-        low_level_feat = low_level_feat + F.adaptive_avg_pool2d(low_level_feat, (1, 1))
+        low_level_feat = low_level_feat
         middle_level_feat = self.middle2low(middle_level_feat)
         middle_level_feat = F.interpolate(middle_level_feat,
                                           scale_factor=2,

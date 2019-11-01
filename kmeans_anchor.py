@@ -2,10 +2,10 @@ from sklearn.cluster import KMeans
 import os
 import numpy as np
 from tqdm import tqdm
-from .utils import read_2d_list
+from utils.cv_utils.utils import read_2d_list
 
 
-def kmeans_anchor(label_dir, n_clusters=9, img_height=320):
+def kmeans_anchor(label_dir, n_clusters=4, img_height=320):
     names = os.listdir(label_dir)
     wh_list = []
     for name in tqdm(names):
@@ -25,4 +25,4 @@ def kmeans_anchor(label_dir, n_clusters=9, img_height=320):
 
 
 if __name__ == "__main__":
-    kmeans_anchor('/home/uisee/Datasets/mark-small-2classes/labels')
+    kmeans_anchor('data/tt100k/labels')
