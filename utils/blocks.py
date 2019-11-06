@@ -3,16 +3,15 @@ import torch.nn as nn
 import math
 import torch.nn.functional as F
 
-relu = nn.LeakyReLU(inplace=True)
-bn = nn.BatchNorm2d
-
 
 class CReLU(nn.Module):
     def forward(self, x):
         return torch.cat([relu(x), relu(-x)], 1)
 
 
-crelu = CReLU()
+class Swish(nn.Module):
+    def forward(self, x):
+        return x * x.sigmoid()
 
 
 class SELayer(nn.Module):
@@ -43,7 +42,7 @@ class AsppPooling(nn.Module):
         self.gap = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
             nn.Conv2d(in_channels, out_channels, 1, bias=False),
-            bn(out_channels),
+            nn.BatchNorm2d(out_channels),
             nn.LeakyReLU(),
         )
 
@@ -61,7 +60,7 @@ class Aspp(nn.Module):
         blocks.append(
             nn.Sequential(
                 nn.Conv2d(in_channels, out_channels, 1, bias=False),
-                bn(out_channels),
+                nn.BatchNorm2d(out_channels),
                 nn.LeakyReLU(),
             ))
         for rate in atrous_rates:
@@ -88,7 +87,7 @@ class BLD(nn.Module):
                  stride=1,
                  groups=1,
                  dilation=1,
-                 activate=nn.LeakyReLU(),
+                 activate=Swish(),
                  se_block=False):
         super(BLD, self).__init__()
         if activate is None:
@@ -98,7 +97,7 @@ class BLD(nn.Module):
         else:
             se_block = EmptyLayer()
         self.bld = nn.Sequential(
-            bn(in_channels), se_block, activate,
+            nn.BatchNorm2d(in_channels), se_block, activate,
             nn.Conv2d(in_channels *
                       2 if isinstance(activate, CReLU) else in_channels,
                       out_channels,
@@ -140,7 +139,7 @@ class DBL(nn.Module):
                       groups=groups,
                       dilation=dilation,
                       bias=False),
-            bn(out_channels),
+            nn.BatchNorm2d(out_channels),
             activate,
             se_block,
         )
@@ -150,37 +149,88 @@ class DBL(nn.Module):
 
 
 class ResBlock(nn.Module):
-    def __init__(self,
-                 in_channels,
-                 out_channels,
-                 stride=1,
-                 dilation=1,
-                 se_block=True):
+    def __init__(self, filters, dilation=1, se_block=False):
         super(ResBlock, self).__init__()
         self.block = nn.Sequential(
-            BLD(in_channels, out_channels // 4, 1),
+            BLD(filters, filters // 4, 1),
             BLD(
-                out_channels // 4,
-                out_channels // 4,
-                stride=stride,
+                filters // 4,
+                filters // 4,
                 dilation=dilation,
-                groups=out_channels // 4,
+                groups=filters // 4,
             ),
-            BLD(out_channels // 4,
-                out_channels,
-                1,
-                activate=None,
-                se_block=se_block))
-        self.downsample = EmptyLayer()
-        if stride > 1 or in_channels != out_channels:
-            self.downsample = BLD(in_channels,
-                                  out_channels,
-                                  3,
-                                  stride,
-                                  activate=None)
+            BLD(filters // 4, filters, 1, se_block=se_block),
+        )
 
     def forward(self, x):
-        return self.downsample(x) + self.block(x)
+        return x + self.block(x)
+
+
+class ResBackbone(nn.Module):
+    def __init__(self, output_stride=32):
+        super(ResBackbone, self).__init__()
+        assert output_stride in [8, 16, 32]
+        if output_stride == 32:
+            block4_stride = 2
+            block5_stride = 2
+        elif output_stride == 16:
+            block4_stride = 2
+            block5_stride = 1
+        elif output_stride == 8:
+            block4_stride = 1
+            block5_stride = 1
+
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(3, 32, 3, 1, 1, bias=False),
+            ResBlock(32),
+        )
+        self.block1 = nn.Sequential(
+            BLD(32, 64, stride=2),
+            ResBlock(64),
+        )
+        self.block2 = nn.Sequential(
+            BLD(64, 128, stride=2),
+            ResBlock(128),
+            ResBlock(128),
+        )
+        self.block3 = nn.Sequential(
+            BLD(128, 256, stride=2),
+            ResBlock(256),
+            ResBlock(256),
+            ResBlock(256),
+            ResBlock(256),
+            ResBlock(256),
+            ResBlock(256),
+            ResBlock(256),
+            ResBlock(256),
+        )
+        self.block4 = nn.Sequential(
+            BLD(256, 512, stride=block4_stride),
+            ResBlock(512),
+            ResBlock(512),
+            ResBlock(512),
+            ResBlock(512),
+            ResBlock(512),
+            ResBlock(512),
+            ResBlock(512),
+            ResBlock(512),
+        )
+        self.block5 = nn.Sequential(
+            BLD(512, 1024, stride=block5_stride),
+            ResBlock(1024),
+            ResBlock(1024),
+            ResBlock(1024),
+            ResBlock(1024),
+        )
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.block1(x)
+        x = self.block2(x)
+        x = self.block3(x)
+        x = self.block4(x)
+        x = self.block5(x)
+        return x
 
 
 class DenseBlock(nn.Module):
@@ -239,7 +289,7 @@ class SeparableConv2d(nn.Module):
                 in_channels,
                 bias,
             ),
-            bn(in_channels),
+            nn.BatchNorm2d(in_channels),
             nn.Conv2d(in_channels, out_channels, 1, bias=bias),
         )
 
@@ -262,7 +312,7 @@ class XBlock(nn.Module):
         if out_channels != in_channels or stride != 1:
             self.skip = nn.Sequential(
                 nn.Conv2d(in_channels, out_channels, 1, stride, bias=False),
-                bn(out_channels),
+                nn.BatchNorm2d(out_channels),
             )
         else:
             self.skip = EmptyLayer()
@@ -273,7 +323,7 @@ class XBlock(nn.Module):
                 rep.append(nn.LeakyReLU())
             rep.append(
                 SeparableConv2d(in_channels, out_channels, 3, 1, dilation))
-            rep.append(bn(out_channels))
+            rep.append(nn.BatchNorm2d(out_channels))
             filters = out_channels
         for i in range(reps - 1):
             if grow_first or start_with_relu:
@@ -285,7 +335,7 @@ class XBlock(nn.Module):
                 1,
                 dilation,
             ))
-            rep.append(bn(filters))
+            rep.append(nn.BatchNorm2d(filters))
         if not grow_first:
             rep.append(nn.LeakyReLU(inplace=True))
             rep.append(
@@ -304,7 +354,7 @@ class XBlock(nn.Module):
                 3,
                 stride,
             ))
-            rep.append(bn(out_channels))
+            rep.append(nn.BatchNorm2d(out_channels))
         elif is_last:
             rep.append(nn.LeakyReLU(inplace=True))
             rep.append(
@@ -315,7 +365,7 @@ class XBlock(nn.Module):
                     1,
                     dilation,
                 ))
-            rep.append(bn(out_channels))
+            rep.append(nn.BatchNorm2d(out_channels))
         if se_block:
             rep.append(SELayer(out_channels))
         self.rep = nn.Sequential(*rep)
@@ -347,10 +397,10 @@ class XceptionBackbone(nn.Module):
         # Entry flow
         self.conv1 = nn.Sequential(
             nn.Conv2d(3, 32, 3, 2, 1, bias=False),
-            bn(32),
+            nn.BatchNorm2d(32),
             nn.LeakyReLU(inplace=True),
             nn.Conv2d(32, 64, 3, 1, 1, bias=False),
-            bn(64),
+            nn.BatchNorm2d(64),
             nn.LeakyReLU(inplace=True),
         )
         self.block1 = nn.Sequential(
@@ -381,10 +431,10 @@ class XceptionBackbone(nn.Module):
                        dilation=middle_block_dilation,
                        start_with_relu=True,
                        grow_first=True))
-        self.middle_flow = nn.Sequential(*middle_flow)
+        self.block4 = nn.Sequential(*middle_flow)
 
         # Exit flow
-        self.exit_flow = nn.Sequential(
+        self.block5 = nn.Sequential(
             XBlock(728,
                    1024,
                    reps=2,
@@ -396,18 +446,18 @@ class XceptionBackbone(nn.Module):
             nn.LeakyReLU(inplace=True),
             SeparableConv2d(1024, 1536, 3, 1,
                             dilation=exit_block_dilations[1]),
-            bn(1536),
+            nn.BatchNorm2d(1536),
             nn.LeakyReLU(inplace=True),
             SeparableConv2d(1536,
                             1536,
                             3,
                             stride=1,
                             dilation=exit_block_dilations[1]),
-            bn(1536),
+            nn.BatchNorm2d(1536),
             nn.LeakyReLU(inplace=True),
             SeparableConv2d(1536, 2048, 3, 1,
                             dilation=exit_block_dilations[1]),
-            bn(2048),
+            nn.BatchNorm2d(2048),
             nn.LeakyReLU(inplace=True),
         )
 
@@ -416,13 +466,13 @@ class XceptionBackbone(nn.Module):
         x = self.block1(x)
         x = self.block2(x)
         x = self.block3(x)
-        x = self.middle_flow(x)
-        x = self.exit_flow(x)
+        x = self.block4(x)
+        x = self.block5(x)
         return x
 
 
 if __name__ == "__main__":
     a = torch.ones([2, 3, 224, 224])
-    b = XceptionBackbone(8)(a)
+    b = ResBackbone(8)(a)
     print(b.shape)
     b.mean().backward()

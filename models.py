@@ -2,7 +2,7 @@ import torch.nn.functional as F
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from utils.blocks import bn, relu, ResBlock, BLD, Aspp, AsppPooling, DenseBlock, XceptionBackbone, DBL
+from utils.blocks import BLD, DBL, XceptionBackbone, ResBackbone, Swish
 import math
 from utils.google_utils import *
 from utils.parse_config import *
@@ -108,12 +108,13 @@ class YOLOV3(nn.Module):
                      [[116, 90]],
                  ]):
         super(YOLOV3, self).__init__()
-        self.backbone = XceptionBackbone()
-        self.high_block = DBL(2048, 1024)
+        self.backbone = ResBackbone()
         self.high_final = nn.Sequential(
-            DBL(1024, 512),
-            nn.Conv2d(512,
-                      len(anchors[-1]) * (5 + num_classes), 1))
+            nn.BatchNorm2d(1024),
+            Swish(),
+            nn.Conv2d(1024,
+                      len(anchors[-1]) * (5 + num_classes), 1),
+        )
         self.high_yolo = YOLOLayer(
             anchors=np.float32(anchors[-1]),  # anchor list
             nc=num_classes,  # number of classes
@@ -121,12 +122,14 @@ class YOLOV3(nn.Module):
             yolo_index=0,  # 0, 1 or 2
         )  # yolo architecture
 
-        self.high2middle = DBL(1024, 512)
-        self.middle_block = DBL(728 + 512, 512)
+        self.high2middle = BLD(1024, 512)
+        self.middle_block = BLD(1024, 512)
         self.middle_final = nn.Sequential(
-            DBL(512, 512),
+            nn.BatchNorm2d(512),
+            Swish(),
             nn.Conv2d(512,
-                      len(anchors[-2]) * (5 + num_classes), 1))
+                      len(anchors[-2]) * (5 + num_classes), 1),
+        )
         self.middle_yolo = YOLOLayer(
             anchors=np.float32(anchors[-2]),  # anchor list
             nc=num_classes,  # number of classes
@@ -134,12 +137,14 @@ class YOLOV3(nn.Module):
             yolo_index=1,  # 0, 1 or 2
         )  # yolo architecture
 
-        self.middle2low = DBL(512, 256)
-        self.low_block = DBL(512, 256)
+        self.middle2low = BLD(512, 256)
+        self.low_block = BLD(512, 256)
         self.low_final = nn.Sequential(
-            DBL(256, 256),
+            nn.BatchNorm2d(256),
+            Swish(),
             nn.Conv2d(256,
-                      len(anchors[-3]) * (5 + num_classes), 1))
+                      len(anchors[-3]) * (5 + num_classes), 1),
+        )
         self.low_yolo = YOLOLayer(
             anchors=np.float32(anchors[-3]),  # anchor list
             nc=num_classes,  # number of classes
@@ -156,13 +161,12 @@ class YOLOV3(nn.Module):
         x = self.backbone.conv1(x)
         x = self.backbone.block1(x)
         x = self.backbone.block2(x)
-        low = x
         x = self.backbone.block3(x)
+        low = x
+        x = self.backbone.block4(x)
         middle = x
-        x = self.backbone.middle_flow(x)
-        x = self.backbone.exit_flow(x)
+        x = self.backbone.block5(x)
         high = x
-        high = self.high_block(high)
         high_output = self.high_final(high)
         high_output = self.high_yolo(high_output, img_size)
         output.append(high_output)
