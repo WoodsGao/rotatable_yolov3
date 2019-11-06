@@ -6,6 +6,16 @@ __pycache__/
 # C extensions
 *.so
 
+# tensorboard
+runs/
+
+weights/
+.vscode/
+data/
+core/
+*.png
+ttmp/
+vtmp/
 # Distribution / packaging
 .Python
 build/
