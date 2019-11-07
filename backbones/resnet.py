@@ -23,8 +23,6 @@ class ResNet(nn.Module):
         self.block2 = nn.Sequential(
             ResBlock(64, 128, stride=2),
             ResBlock(128, 128),
-            nn.BatchNorm2d(128),
-            Swish(),
         )
         self.block3 = nn.Sequential(
             ResBlock(128, 256, stride=2),
@@ -32,8 +30,6 @@ class ResNet(nn.Module):
             ResBlock(256, 256),
             ResBlock(256, 256),
             ResBlock(256, 256),
-            nn.BatchNorm2d(256),
-            Swish(),
         )
         self.block4 = nn.Sequential(
             ResBlock(256, 512, stride=block4_stride),
@@ -45,15 +41,11 @@ class ResNet(nn.Module):
             ResBlock(512, 512),
             ResBlock(512, 512),
             ResBlock(512, 512),
-            nn.BatchNorm2d(512),
-            Swish(),
         )
         self.block5 = nn.Sequential(
             ResBlock(512, 1024, stride=block5_stride),
             ResBlock(1024, 1024),
             ResBlock(1024, 1024),
-            nn.BatchNorm2d(1024),
-            Swish(),
         )
 
     def forward(self, x):
