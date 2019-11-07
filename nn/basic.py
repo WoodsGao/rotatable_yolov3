@@ -15,15 +15,10 @@ class BLD(nn.Module):
                  stride=1,
                  groups=1,
                  dilation=1,
-                 activate=Swish(),
-                 se_block=False):
+                 activate=Swish()):
         super(BLD, self).__init__()
         if activate is None:
             activate = EmptyLayer()
-        if se_block:
-            se_block = SELayer(in_channels)
-        else:
-            se_block = EmptyLayer()
         self.block = nn.Sequential(
             nn.BatchNorm2d(in_channels), se_block, activate,
             nn.Conv2d(in_channels *
@@ -48,15 +43,10 @@ class DBL(nn.Module):
                  stride=1,
                  groups=1,
                  dilation=1,
-                 activate=Swish(),
-                 se_block=False):
+                 activate=Swish()):
         super(DBL, self).__init__()
         if activate is None:
             activate = EmptyLayer()
-        if se_block:
-            se_block = SELayer(out_channels)
-        else:
-            se_block = EmptyLayer()
         self.block = nn.Sequential(
             nn.Conv2d(in_channels,
                       out_channels //
@@ -69,7 +59,6 @@ class DBL(nn.Module):
                       bias=False),
             nn.BatchNorm2d(out_channels),
             activate,
-            se_block,
         )
 
     def forward(self, x):

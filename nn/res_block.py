@@ -13,7 +13,7 @@ class ResBlock(nn.Module):
                 dilation=dilation,
                 groups=filters // 4,
             ),
-            BLD(filters // 4, filters, 1, se_block=se_block),
+            BLD(filters // 4, filters, 1),
         )
 
     def forward(self, x):
