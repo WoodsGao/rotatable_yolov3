@@ -28,7 +28,7 @@ class DenseBlock(nn.Module):
         if stride == 1:
             self.downsample = CutLayer(out_channels)
         else:
-            self.downsample = DBL(in_channels, out_channels, 1, 2)
+            self.downsample = nn.Conv2d(in_channels, out_channels, 1, stride)
         self.block = nn.Sequential(
             DBL(in_channels, out_channels // 2, 1),
             DBL(

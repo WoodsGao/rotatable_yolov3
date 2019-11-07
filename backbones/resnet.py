@@ -18,40 +18,40 @@ class ResNet(nn.Module):
 
         self.block1 = nn.Sequential(
             DBL(3, 32, 7),
-            DBL(32, 64, stride=2),
+            ResBlock(32, 64, stride=2),
         )
         self.block2 = nn.Sequential(
-            DBL(64, 128, stride=2),
-            ResBlock(128),
+            ResBlock(64, 128, stride=2),
+            ResBlock(128, 128),
             nn.BatchNorm2d(128),
             Swish(),
         )
         self.block3 = nn.Sequential(
-            DBL(128, 256, stride=2),
-            ResBlock(256),
-            ResBlock(256),
-            ResBlock(256),
-            ResBlock(256),
+            ResBlock(128, 256, stride=2),
+            ResBlock(256, 256),
+            ResBlock(256, 256),
+            ResBlock(256, 256),
+            ResBlock(256, 256),
             nn.BatchNorm2d(256),
             Swish(),
         )
         self.block4 = nn.Sequential(
-            DBL(256, 512, stride=block4_stride),
-            ResBlock(512),
-            ResBlock(512),
-            ResBlock(512),
-            ResBlock(512),
-            ResBlock(512),
-            ResBlock(512),
-            ResBlock(512),
-            ResBlock(512),
+            ResBlock(256, 512, stride=block4_stride),
+            ResBlock(512, 512),
+            ResBlock(512, 512),
+            ResBlock(512, 512),
+            ResBlock(512, 512),
+            ResBlock(512, 512),
+            ResBlock(512, 512),
+            ResBlock(512, 512),
+            ResBlock(512, 512),
             nn.BatchNorm2d(512),
             Swish(),
         )
         self.block5 = nn.Sequential(
-            DBL(512, 1024, stride=block5_stride),
-            ResBlock(1024),
-            ResBlock(1024),
+            ResBlock(512, 1024, stride=block5_stride),
+            ResBlock(1024, 1024),
+            ResBlock(1024, 1024),
             nn.BatchNorm2d(1024),
             Swish(),
         )
