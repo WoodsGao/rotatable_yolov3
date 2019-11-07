@@ -2,7 +2,8 @@ import torch.nn.functional as F
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from utils.blocks import BLD, DBL, XceptionBackbone, ResBackbone, Swish
+from utils.modules.nn import BLD, DBL, Swish
+from utils.modules.backbones import DenseNet
 import math
 from utils.google_utils import *
 from utils.parse_config import *
@@ -108,7 +109,7 @@ class YOLOV3(nn.Module):
                      [[116, 90]],
                  ]):
         super(YOLOV3, self).__init__()
-        self.backbone = ResBackbone()
+        self.backbone = DenseNet()
         self.high_final = nn.Sequential(
             nn.BatchNorm2d(1024),
             Swish(),
@@ -123,11 +124,10 @@ class YOLOV3(nn.Module):
         )  # yolo architecture
 
         self.high2middle = BLD(1024, 512)
-        self.middle_block = BLD(1024, 512)
         self.middle_final = nn.Sequential(
-            nn.BatchNorm2d(512),
+            nn.BatchNorm2d(1024),
             Swish(),
-            nn.Conv2d(512,
+            nn.Conv2d(1024,
                       len(anchors[-2]) * (5 + num_classes), 1),
         )
         self.middle_yolo = YOLOLayer(
@@ -137,12 +137,11 @@ class YOLOV3(nn.Module):
             yolo_index=1,  # 0, 1 or 2
         )  # yolo architecture
 
-        self.middle2low = BLD(512, 256)
-        self.low_block = BLD(512, 256)
+        self.middle2low = BLD(1024, 256)
         self.low_final = nn.Sequential(
-            nn.BatchNorm2d(256),
+            nn.BatchNorm2d(512),
             Swish(),
-            nn.Conv2d(256,
+            nn.Conv2d(512,
                       len(anchors[-3]) * (5 + num_classes), 1),
         )
         self.low_yolo = YOLOLayer(
@@ -158,7 +157,6 @@ class YOLOV3(nn.Module):
     def forward(self, x, var=None):
         img_size = x.shape[-2:]
         output = []
-        x = self.backbone.conv1(x)
         x = self.backbone.block1(x)
         x = self.backbone.block2(x)
         x = self.backbone.block3(x)
@@ -176,8 +174,7 @@ class YOLOV3(nn.Module):
                              scale_factor=2,
                              mode='bilinear',
                              align_corners=True)
-        middle = torch.cat([middle, high], 1)
-        middle = self.middle_block(middle)
+        middle = torch.cat([high, middle], 1)
         middle_output = self.middle_final(middle)
         middle_output = self.middle_yolo(middle_output, img_size)
         output.append(middle_output)
@@ -187,8 +184,7 @@ class YOLOV3(nn.Module):
                                scale_factor=2,
                                mode='bilinear',
                                align_corners=True)
-        low = torch.cat([low, middle], 1)
-        low = self.low_block(low)
+        low = torch.cat([middle, low], 1)
         low_output = self.low_final(low)
         low_output = self.low_yolo(low_output, img_size)
         output.append(low_output)

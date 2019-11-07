@@ -1,0 +1,3 @@
+[submodule "utils/modules"]
+	path = utils/modules
+	url = https://github.com/woodsgao/pytorch_modules

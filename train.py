@@ -8,7 +8,7 @@ import test  # import test.py to get mAP after each epoch
 from models import *
 from utils.datasets import *
 from utils.utils import *
-from utils.optim import AdaBoundW
+from utils.modules.optims import AdaBoundW
 
 mixed_precision = True
 try:  # Mixed precision training https://github.com/NVIDIA/apex
@@ -75,7 +75,7 @@ def train(lr=1e-3):
     model = YOLOV3(1).to(device)
 
     if opt.adam:
-        optimizer = optim.AdamW(model.parameters(), lr=lr, amsgrad=True)
+        optimizer = optim.Adam(model.parameters(), lr=lr, amsgrad=True)
     else:
         optimizer = optim.SGD(
             model.parameters(),
