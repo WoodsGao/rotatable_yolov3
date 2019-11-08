@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .basic import DBL, BLD
+from . import DBL, BLD
 
 
 class AsppPooling(nn.Module):
