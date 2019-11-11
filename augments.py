@@ -5,21 +5,12 @@ import numpy as np
 
 # bigger better
 class PerspectiveProject:
-    def __init__(self, rate=0.1, p=0.5):
-        self.rate = rate
-        self.p = p
+    def __init__(self, matrix):
+        self.matrix = matrix
 
     def __call__(self, img, det=None, seg=None):
-        if random.random() > self.p:
-            return img, det, seg
-        src = np.float32([[0, 0], [0, img.shape[0]], [img.shape[1], 0],
-                          [img.shape[1], img.shape[0]]])
-        dst = src + np.float32(
-            (np.random.rand(4, 2) * 2 - 1) *
-            np.float32([img.shape[0], img.shape[1]]) * self.rate)
-        p_matrix = cv2.getPerspectiveTransform(src, dst)
-        img = cv2.warpPerspective(img, p_matrix, (img.shape[1], img.shape[0]))
-
+        img = cv2.warpPerspective(img, self.matrix,
+                                  (img.shape[1], img.shape[0]))
         if det is not None:
             new_det = list()
             # detection n*(x1 y1 x2 y2 x3 y3 x4 y4)
@@ -27,12 +18,12 @@ class PerspectiveProject:
                 point = np.concatenate(
                     [det[:, 2 * i:2 * i + 2],
                      np.ones([det.shape[0], 1])], 1)
-                point = np.dot(p_matrix, point.transpose(1, 0)).transpose(1, 0)
+                point = np.dot(self.matrix, point.transpose(1, 0)).transpose(1, 0)
                 point[:, :2] /= point[:, 2:]
                 new_det.append(point[:, :2])
             det = np.concatenate(new_det, 1)
         if seg is not None:
-            seg = cv2.warpPerspective(seg, p_matrix,
+            seg = cv2.warpPerspective(seg, self.matrix,
                                       (seg.shape[1], seg.shape[0]))
         return img, det, seg
 
