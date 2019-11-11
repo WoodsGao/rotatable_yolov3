@@ -1,12 +1,10 @@
 import cv2
 import random
 import numpy as np
-import math
 
 
 # bigger better
-class PerspectiveProject(object):
-
+class PerspectiveProject:
     def __init__(self, rate=0.1, p=0.5):
         self.rate = rate
         self.p = p
@@ -14,176 +12,61 @@ class PerspectiveProject(object):
     def __call__(self, img, det=None, seg=None):
         if random.random() > self.p:
             return img, det, seg
-        src = np.float32([[0, 0],
-                          [0, img.shape[0]],
-                          [img.shape[1], 0],
+        src = np.float32([[0, 0], [0, img.shape[0]], [img.shape[1], 0],
                           [img.shape[1], img.shape[0]]])
-        dst = src + np.float32((np.random.rand(4, 2)*2-1) *
-                               np.float32([img.shape[0], img.shape[1]]) * self.rate)
+        dst = src + np.float32(
+            (np.random.rand(4, 2) * 2 - 1) *
+            np.float32([img.shape[0], img.shape[1]]) * self.rate)
         p_matrix = cv2.getPerspectiveTransform(src, dst)
-        
         img = cv2.warpPerspective(img, p_matrix, (img.shape[1], img.shape[0]))
-        
+
         if det is not None:
             new_det = list()
             # detection n*(x1 y1 x2 y2 x3 y3 x4 y4)
             for i in range(4):
-                point = np.concatenate([det[:, 2*i:2*i+2], np.ones([det.shape[0], 1])], 1)
-                point = np.dot(p_matrix, point.transpose(1,0)).transpose(1,0)
+                point = np.concatenate(
+                    [det[:, 2 * i:2 * i + 2],
+                     np.ones([det.shape[0], 1])], 1)
+                point = np.dot(p_matrix, point.transpose(1, 0)).transpose(1, 0)
                 point[:, :2] /= point[:, 2:]
                 new_det.append(point[:, :2])
             det = np.concatenate(new_det, 1)
         if seg is not None:
-            seg = cv2.warpPerspective(seg, p_matrix, (seg.shape[1], seg.shape[0]))
+            seg = cv2.warpPerspective(seg, p_matrix,
+                                      (seg.shape[1], seg.shape[0]))
         return img, det, seg
 
 
-class H_Flap(object):
-
-    def __init__(self, p=0.5):
-        self.p = p
-
-    def __call__(self, img, det=None, seg=None):
-        if random.random() > self.p:
-            return img, det, seg
-        img = img[:, ::-1, :]
-        if det is not None:
-            # detection n*(x1 y1 x2 y2 x3 y3 x4 y4)
-            det[:, 0::2] = img.shape[1] - det[:, 0::2]
-        if seg is not None:
-            seg = seg[:, ::-1, :]
-        return img, det, seg
-
-
-class V_Flap(object):
-
-    def __init__(self, p=0.5):
-        self.p = p
+class HSV:
+    def __init__(self, rate=[0.01, 0.7, 0.4]):
+        self.rate = np.float32([[rate]])
 
     def __call__(self, img, det=None, seg=None):
-        if random.random() > self.p:
-            return img, det, seg
-        img = img[::-1, :, :]
-        if det is not None:
-            # detection n*(x1 y1 x2 y2 x3 y3 x4 y4)
-            det[:, 1::2] = img.shape[0] - det[:, 1::2]
-        if seg is not None:
-            seg = seg[::-1, :, :]
-        return img, det, seg
-
-
-class HSV_H(object):
-
-    def __init__(self, rate=0.1, p=0.5):
-        self.rate = rate
-        self.p = p
-
-    def __call__(self, img, det=None, seg=None):
-        if random.random() > self.p:
-            return img, det, seg
         img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         img = np.float32(img)
-        img[:, :, 0] *= 1+(self.rate * random.uniform(-1, 1))
-        img[img > 255] = 255
-        img[img < 0] = 0
+        img += img * self.rate
+        img = np.clip(img, 0, 255)
         img = np.uint8(img)
         img = cv2.cvtColor(img, cv2.COLOR_HSV2BGR)
         return img, det, seg
 
 
-class HSV_S(object):
-
-    def __init__(self, rate=0.1, p=0.5):
-        self.rate = rate
-        self.p = p
+class Blur:
+    def __init__(self, ksize=3):
+        self.ksize = ksize
 
     def __call__(self, img, det=None, seg=None):
-        if random.random() > self.p:
-            return img, det, seg
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        img = np.float32(img)
-        img[:, :, 1] *= 1+(self.rate * random.uniform(-1, 1))
-        img[img > 255] = 255
-        img[img < 0] = 0
-        img = np.uint8(img)
-        img = cv2.cvtColor(img, cv2.COLOR_HSV2BGR)
+        img = cv2.blur(img, (self.ksize, self.ksize))
         return img, det, seg
 
 
-class HSV_V(object):
-
-    def __init__(self, rate=0.1, p=0.5):
+class Pepper:
+    def __init__(self, rate=0.05):
         self.rate = rate
-        self.p = p
 
     def __call__(self, img, det=None, seg=None):
-        if random.random() > self.p:
-            return img, det, seg
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        img = np.float32(img)
-        img[:, :, 2] *= 1+(self.rate * random.uniform(-1, 1))
-        img[img > 255] = 255
-        img[img < 0] = 0
-        img = np.uint8(img)
-        img = cv2.cvtColor(img, cv2.COLOR_HSV2BGR)
-        return img, det, seg
-
-
-class Rotate(object):
-
-    def __init__(self, rate=0.1, p=0.5):
-        self.rate = rate
-        self.p = p
-
-    def __call__(self, img, det=None, seg=None):
-        if random.random() > self.p:
-            return img, det, seg
-        d = random.uniform(-1, 1)*self.rate*180
-        scale = max(abs(math.sin(d/180*math.pi)), abs(math.cos(d/180*math.pi)))
-        r_matrix = cv2.getRotationMatrix2D(
-            (img.shape[1]/2, img.shape[0]/2), d, scale)
-        img = cv2.warpAffine(img, r_matrix, (img.shape[1], img.shape[0]))
-        if det is not None:
-            new_det = list()
-            # detection n*(x1 y1 x2 y2 x3 y3 x4 y4)
-            for i in range(4):
-                point = np.concatenate([det[:, 2*i:2*i+2], np.ones([det.shape[0], 1])], 1)
-                point = np.dot(r_matrix, point.transpose(1,0)).transpose(1,0)
-                # point[:, :2] /= point[:, 2:]
-                new_det.append(point[:, :2])
-            det = np.concatenate(new_det, 1)
-        if seg is not None:
-            seg = cv2.warpAffine(seg, r_matrix, (seg.shape[1], seg.shape[0]))
-        return img, det, seg
-
-
-class Blur(object):
-
-    def __init__(self, rate=0.1, p=0.5):
-        self.rate = rate
-        self.p = p
-
-    def __call__(self, img, det=None, seg=None):
-        if random.random() > self.p:
-            return img, det, seg
-        rate = self.rate*random.random()
-        ksize = (int((rate*img.shape[0])//2)*2+1,
-                 int((rate*img.shape[1])//2)*2+1)
-        img = cv2.blur(img, ksize)
-        return img, det, seg
-
-
-class Noise(object):
-
-    def __init__(self, rate=0.05, p=0.5):
-        self.rate = rate
-        self.p = p
-
-    def __call__(self, img, det=None, seg=None):
-        if random.random() > self.p:
-            return img, det, seg
-        size = img.shape[0] * img.shape[1]
-        amount = int(size*self.rate/2*random.random())
+        size = img.shape[0]
+        amount = int(size * self.rate / 2 * random.random())
 
         x = np.random.randint(0, img.shape[0], amount)
         y = np.random.randint(0, img.shape[1], amount)
