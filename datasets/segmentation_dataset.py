@@ -3,6 +3,7 @@ import numpy as np
 import os
 import torch
 from . import BasicDataset
+from ..augments import augments_parser
 
 
 class SegmentationDataset(BasicDataset):
@@ -22,7 +23,7 @@ class SegmentationDataset(BasicDataset):
                 os.path.join(label_dir,
                              os.path.splitext(name)[0] + '.png')
             ] for name in names
-            if os.path.splitext(name)[1] in ['jpg', 'jpeg', 'png', 'tiff']
+            if os.path.splitext(name)[1] in ['.jpg', '.jpeg', '.png', '.tiff']
         ]
 
     def get_item(self, idx):
@@ -36,10 +37,15 @@ class SegmentationDataset(BasicDataset):
         for ci, c in enumerate(self.classes):
             seg[(seg_color == c[1]).all(2), ci] = 1
         seg = cv2.resize(seg, (self.img_size, self.img_size))
-        for aug in self.augments:
+        for aug in augments_parser(self.augments):
             img, _, seg = aug(img, seg=seg)
+        img = img[:, :, ::-1]
+        img = np.float32(img)
+        img /= 255.
+        img = img.transpose(2, 0, 1)
+        img = np.ascontiguousarray(img)
         seg[seg.sum(2) == 0, 0] = 1
-        seg_args = seg.argmax(0)
+        seg_args = seg.argmax(2)
         # for ci, c in enumerate(self.classes):
         #     seg[seg_args == ci, 1 if ci > 0 else 0] = 1
         return torch.FloatTensor(img), torch.LongTensor(seg_args)

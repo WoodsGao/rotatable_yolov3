@@ -11,7 +11,8 @@ class BasicDataset(torch.utils.data.Dataset):
                  cache_dir=None,
                  cache_len=3000,
                  img_size=224,
-                 augments=[]):
+                 augments={}):
+        super(BasicDataset, self).__init__()
         self.path = path
         if cache_dir is not None:
             os.makedirs(cache_dir, exist_ok=True)
@@ -30,7 +31,7 @@ class BasicDataset(torch.utils.data.Dataset):
             ]
             self.cache_len = cache_len
             self.cache_memory = [None for i in range(cache_len)]
-            self.cache_worker_queue = Queue(-1)
+            self.cache_worker_queue = Queue(0)
             t = Thread(target=self.worker)
             t.setDaemon(True)
             t.start()
@@ -39,6 +40,7 @@ class BasicDataset(torch.utils.data.Dataset):
         while True:
             idx = self.cache_worker_queue.get()
             self.refresh_cache(idx)
+            self.cache_worker_queue.task_done()
 
     def refresh_cache(self, idx):
         item = self.get_item(idx)
@@ -67,3 +69,9 @@ class BasicDataset(torch.utils.data.Dataset):
         if self.counts[idx] > randint(3, 15):
             self.cache_worker_queue.put(idx)
         return item
+
+    def build_data(self):
+        pass
+
+    def get_item(self, idx):
+        return None
