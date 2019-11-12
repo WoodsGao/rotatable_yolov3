@@ -3,7 +3,7 @@ import numpy as np
 import os
 import torch
 from . import BasicDataset
-from ..augments import augments_parser, PerspectiveProject
+from ..augments import augments_parser
 
 
 class SegmentationDataset(BasicDataset):
