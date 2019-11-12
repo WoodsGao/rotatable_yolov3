@@ -6,16 +6,25 @@ A neural network toolkit built on pytorch/opencv/numpy that includes neural netw
 
 ## Features
 
+ - Advanced neural network modules
+ - Ultra-efficient dataloader that allows you to take full advantage of GPU
+ - High performance and multifunctional data augmentation(See [woodsgao/image_augments](https://github.com/woodsgao/image_augments))
+
 ## Installation
 
-### As a submodule
+### As a subtree
 
-    git submodule add https://github.com/woodsgao/pytorch_modules <submodule_path>
-    cd <submodule_path>
+    git remote add pytorch_modules https://github.com/woodsgao/pytorch_modules 
+    git subtree add --prefix=<subtree_path> pytorch_modules master
+    cd <subtree_path>
     pip install -r requirements.txt
 
 ### As a repository
 
-    git clone https://github.com/woodsgao/pytorch_modules --recurse-submodule
+    git clone https://github.com/woodsgao/pytorch_modules
     cd pytorch_modules
     pip install -r requirements.txt
+
+## Usage
+
+**pytorch_modules**
