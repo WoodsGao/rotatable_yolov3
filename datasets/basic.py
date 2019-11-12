@@ -64,6 +64,7 @@ class BasicDataset(torch.utils.data.Dataset):
         if item is None:
             try:
                 item = torch.load(self.cache_path[idx])
+                assert item[0].size(0) == self.img_size
             except:
                 item = self.refresh_cache(idx)
         if self.counts[idx] > randint(1, 5):
