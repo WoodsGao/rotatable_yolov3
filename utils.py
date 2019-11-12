@@ -50,19 +50,6 @@ def augments_parser(cfg, src_size, dst_size):
                     ],
                     [0, 0, 1],
                 ]))
-    if 'translate' in cfg:
-        if random() < cfg['translate']:
-            translation = [
-                dst_size * 0.1 * uniform(-1, 1),
-                dst_size * 0.1 * uniform(-1, 1)
-            ]
-            matrix = np.dot(
-                matrix,
-                np.array([
-                    [1, 0, translation[0]],
-                    [0, 1, translation[1]],
-                    [0, 0, 1],
-                ]))
     if 'shear' in cfg:
         if random() < cfg['shear']:
             angle = uniform(-1, 1) * np.pi * 0.1
@@ -90,5 +77,18 @@ def augments_parser(cfg, src_size, dst_size):
                 np.array([[factor[0], 0, (1 - factor[0]) * 0.5 * dst_size],
                           [0, factor[1], (1 - factor[1]) * 0.5 * dst_size],
                           [0, 0, 1]]))
+    if 'translate' in cfg:
+        if random() < cfg['translate']:
+            translation = [
+                dst_size * 0.1 * uniform(-1, 1),
+                dst_size * 0.1 * uniform(-1, 1)
+            ]
+            matrix = np.dot(
+                matrix,
+                np.array([
+                    [1, 0, translation[0]],
+                    [0, 1, translation[1]],
+                    [0, 0, 1],
+                ]))
     augments_list.append(PerspectiveProject(matrix, (dst_size, dst_size)))
     return augments_list
