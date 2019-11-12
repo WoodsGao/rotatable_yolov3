@@ -36,7 +36,6 @@ def augments_parser(cfg, src_size, dst_size):
         if random() < cfg['rotate']:
             angle = uniform(-1, 1) * np.pi
             matrix = np.dot(
-                matrix,
                 np.array([
                     [
                         np.cos(angle),
@@ -49,34 +48,31 @@ def augments_parser(cfg, src_size, dst_size):
                         (1 - np.cos(angle) - np.sin(angle)) * 0.5 * dst_size,
                     ],
                     [0, 0, 1],
-                ]))
+                ]), matrix)
     if 'shear' in cfg:
         if random() < cfg['shear']:
             angle = uniform(-1, 1) * np.pi * 0.1
             matrix = np.dot(
-                matrix,
                 np.array([
                     [1, -np.sin(angle),
                      np.sin(angle) * 0.5 * dst_size],
                     [0, np.cos(angle), (1 - np.cos(angle)) * 0.5 * dst_size],
                     [0, 0, 1],
-                ]))
+                ]), matrix)
     if 'scale' in cfg:
         if random() < cfg['scale']:
             factor = [uniform(0.8, 1.1), uniform(0.8, 1.1)]
             matrix = np.dot(
-                matrix,
                 np.array([[factor[0], 0, (1 - factor[0]) * 0.5 * dst_size],
                           [0, factor[1], (1 - factor[1]) * 0.5 * dst_size],
-                          [0, 0, 1]]))
+                          [0, 0, 1]]), matrix)
     if 'flip' in cfg:
         if random() < cfg['flip']:
             factor = [choice([-1, 1]), choice([-1])]
             matrix = np.dot(
-                matrix,
                 np.array([[factor[0], 0, (1 - factor[0]) * 0.5 * dst_size],
                           [0, factor[1], (1 - factor[1]) * 0.5 * dst_size],
-                          [0, 0, 1]]))
+                          [0, 0, 1]]), matrix)
     if 'translate' in cfg:
         if random() < cfg['translate']:
             translation = [
@@ -84,11 +80,10 @@ def augments_parser(cfg, src_size, dst_size):
                 dst_size * 0.1 * uniform(-1, 1)
             ]
             matrix = np.dot(
-                matrix,
                 np.array([
                     [1, 0, translation[0]],
                     [0, 1, translation[1]],
                     [0, 0, 1],
-                ]))
+                ]), matrix)
     augments_list.append(PerspectiveProject(matrix, (dst_size, dst_size)))
     return augments_list
