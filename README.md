@@ -13,10 +13,11 @@ An image augmentation tool based on OpenCV3 and Numpy, which can be used for dat
 
 ## Installation
 
-### As a submodule
+### As a subtree
 
-    git submodule add https://github.com/woodsgao/image_augments <submodule_path>
-    cd <submodule_path>
+    git remote add image_augments https://github.com/woodsgao/image_augments 
+    git subtree add --prefix=<subtree_path> image_augments master
+    cd <subtree_path>
     pip install -r requirements.txt
 
 ### As a repository
