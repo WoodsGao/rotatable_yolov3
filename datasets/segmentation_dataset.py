@@ -3,7 +3,7 @@ import numpy as np
 import os
 import torch
 from . import BasicDataset
-from ..augments import augments_parser
+from ..augments import augments_parser, PerspectiveProject
 
 
 class SegmentationDataset(BasicDataset):
@@ -28,7 +28,6 @@ class SegmentationDataset(BasicDataset):
 
     def get_item(self, idx):
         img = cv2.imread(self.data[idx][0])
-        img = cv2.resize(img, (self.img_size, self.img_size))
         img = np.float32(img)
         seg_color = cv2.imread(self.data[idx][1])
         seg = np.zeros(
@@ -36,11 +35,9 @@ class SegmentationDataset(BasicDataset):
              len(self.classes)])
         for ci, c in enumerate(self.classes):
             seg[(seg_color == c[1]).all(2), ci] = 1
-        seg = cv2.resize(seg, (self.img_size, self.img_size))
-        for aug in augments_parser(self.augments):
+        for aug in augments_parser(self.augments, img.shape, self.img_size):
             img, _, seg = aug(img, seg=seg)
         img = img[:, :, ::-1]
-        img = np.float32(img)
         img /= 255.
         img = img.transpose(2, 0, 1)
         img = np.ascontiguousarray(img)
