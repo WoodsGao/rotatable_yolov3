@@ -66,7 +66,7 @@ class BasicDataset(torch.utils.data.Dataset):
                 item = torch.load(self.cache_path[idx])
             except:
                 item = self.refresh_cache(idx)
-        if self.counts[idx] > randint(3, 15):
+        if self.counts[idx] > randint(1, 5):
             self.cache_worker_queue.put(idx)
         return item
 
