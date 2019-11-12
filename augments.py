@@ -33,6 +33,7 @@ class HSV:
         self.rate = np.float32([[rate]])
 
     def __call__(self, img, det=None, seg=None):
+        img = np.clip(img, 0, 255)
         img = np.uint8(img)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         img = np.float32(img)
