@@ -5,12 +5,12 @@ import numpy as np
 
 # bigger better
 class PerspectiveProject:
-    def __init__(self, matrix):
+    def __init__(self, matrix, shape):
         self.matrix = matrix
+        self.shape = shape
 
     def __call__(self, img, det=None, seg=None):
-        img = cv2.warpPerspective(img, self.matrix,
-                                  (img.shape[1], img.shape[0]))
+        img = cv2.warpPerspective(img, self.matrix, self.shape)
         if det is not None:
             new_det = list()
             # detection n*(x1 y1 x2 y2 x3 y3 x4 y4)
@@ -18,13 +18,13 @@ class PerspectiveProject:
                 point = np.concatenate(
                     [det[:, 2 * i:2 * i + 2],
                      np.ones([det.shape[0], 1])], 1)
-                point = np.dot(self.matrix, point.transpose(1, 0)).transpose(1, 0)
+                point = np.dot(self.matrix,
+                               point.transpose(1, 0)).transpose(1, 0)
                 point[:, :2] /= point[:, 2:]
                 new_det.append(point[:, :2])
             det = np.concatenate(new_det, 1)
         if seg is not None:
-            seg = cv2.warpPerspective(seg, self.matrix,
-                                      (seg.shape[1], seg.shape[0]))
+            seg = cv2.warpPerspective(seg, self.matrix, self.shape)
         return img, det, seg
 
 
@@ -33,12 +33,14 @@ class HSV:
         self.rate = np.float32([[rate]])
 
     def __call__(self, img, det=None, seg=None):
+        img = np.uint8(img)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         img = np.float32(img)
         img += img * self.rate
         img = np.clip(img, 0, 255)
         img = np.uint8(img)
         img = cv2.cvtColor(img, cv2.COLOR_HSV2BGR)
+        img = np.float32(img)
         return img, det, seg
 
 
@@ -66,4 +68,15 @@ class Pepper:
         x = np.random.randint(0, img.shape[0], amount)
         y = np.random.randint(0, img.shape[1], amount)
         img[x, y] = [255, 255, 255]
+        return img, det, seg
+
+
+class Noise:
+    def __init__(self, rate=10):
+        self.rate = rate
+
+    def __call__(self, img, det=None, seg=None):
+        noise = np.random.rand(*(img.shape))
+        img += self.rate * noise
+        img = np.clip(img, 0, 255)
         return img, det, seg
