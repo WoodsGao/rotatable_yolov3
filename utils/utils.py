@@ -371,7 +371,6 @@ def compute_loss(p, targets, model):  # predictions, targets, model
                 t[range(nb), tcls[i]] = 1.0
                 # lcls += BCE(ps[:, 5:], t).mean()  # BCE
                 ce = CE(ps[:, 5:], tcls[i])  # CE
-                ce = torch.pow(ce, 2) / ce.max()
                 lcls += ce.mean()
 
                 # Instance-class weighting (use with reduction='none')
@@ -383,7 +382,6 @@ def compute_loss(p, targets, model):  # predictions, targets, model
             # with open('targets.txt', 'a') as file:
             #     [file.write('%11.5g ' * 4 % tuple(x) + '\n') for x in torch.cat((txy[i], twh[i]), 1)]
         bce = BCE(pi[..., 4], tobj)
-        bce = torch.pow(bce, 2) / bce.max()
         lobj += bce.mean()  # obj loss
 
     lbox *= h['giou']

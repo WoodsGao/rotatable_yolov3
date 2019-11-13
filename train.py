@@ -72,7 +72,7 @@ def train(lr=1e-3):
     nc = int(data_dict['classes'])  # number of classes
 
     # Initialize model
-    model = YOLOV3(1).to(device)
+    model = YOLOV3(80).to(device)
 
     if opt.adam:
         optimizer = optim.Adam(model.parameters(), lr=lr, amsgrad=True)
@@ -91,14 +91,10 @@ def train(lr=1e-3):
         if opt.adam:
             if 'adam' in state_dict:
                 optimizer.load_state_dict(state_dict['adam'])
-        elif 'sgd' in state_dict:
-            optimizer.load_state_dict(state_dict['sgd'])
-        optimizer.param_groups[0]['lr'] = lr
         best_mAP = state_dict['mAP']
         best_loss = state_dict['loss']
         epoch = state_dict['epoch']
-        model.load_state_dict(state_dict['model'], strict=False)
-
+        model.load_state_dict(state_dict['model'], strict=True)
     # Scheduler https://github.com/ultralytics/yolov3/issues/238
     # lf = lambda x: 1 - x / epochs  # linear ramp to zero
     # lf = lambda x: 10 ** (hyp['lrf'] * x / epochs)  # exp ramp
@@ -275,8 +271,9 @@ def train(lr=1e-3):
             'mAP': mAP,
             'loss': val_loss,
             'epoch': epoch,
-            'adam' if opt.adam else 'sgd': optimizer.state_dict()
         }
+        if opt.adam:
+            state_dict['adam'] = optimizer.state_dict()
         torch.save(state_dict, 'weights/last.pt')
         if val_loss < best_loss:
             print('\nSaving best_loss.pt..')
@@ -350,7 +347,9 @@ if __name__ == '__main__':
                         action='store_true',
                         help='cache images for faster training')
     parser.add_argument(
-        '--weights', type=str, default='weights/last.pt',
+        '--weights',
+        type=str,
+        default='weights/last.pt',
         help='initial weights')  # i.e. weights/darknet.53.conv.74
     parser.add_argument('--arc',
                         type=str,

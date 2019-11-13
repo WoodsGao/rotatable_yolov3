@@ -103,11 +103,9 @@ class YOLOV3(nn.Module):
     def __init__(self,
                  num_classes,
                  img_size=(416, 416),
-                 anchors=[
-                     [[5, 5], [10, 10], [15, 15], [25, 25]],
-                     [[30, 30], [45, 45]],
-                     [[116, 90]],
-                 ]):
+                 anchors=[[[10, 13], [16, 30], [33, 23]],
+                          [[30, 61], [62, 45], [59, 119]],
+                          [[116, 90], [156, 198], [373, 326]]]):
         super(YOLOV3, self).__init__()
         self.backbone = DenseNet()
         self.high_final = nn.Sequential(
