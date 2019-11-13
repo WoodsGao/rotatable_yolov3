@@ -10,6 +10,7 @@ from utils.utils import *
 
 def test(cfg,
          data,
+         dataloader, 
          weights=None,
          batch_size=16,
          img_size=416,
@@ -44,14 +45,6 @@ def test(cfg,
     nc = int(data['classes'])  # number of classes
     test_path = data['valid']  # path to test images
     names = load_classes(data['names'])  # class names
-
-    # Dataloader
-    dataset = LoadImagesAndLabels(test_path, img_size, batch_size)
-    dataloader = DataLoader(dataset,
-                            batch_size=batch_size,
-                            # num_workers=min([os.cpu_count(), batch_size, 16]),
-                            pin_memory=True,
-                            collate_fn=dataset.collate_fn)
 
     seen = 0
     model.eval()

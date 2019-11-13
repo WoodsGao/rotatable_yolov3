@@ -9,6 +9,8 @@ from models import *
 from utils.datasets import *
 from utils.utils import *
 from utils.modules.optims import AdaBoundW
+from utils.modules.datasets import DetectionDataset
+from torch.utils.data import DataLoader
 
 mixed_precision = True
 try:  # Mixed precision training https://github.com/NVIDIA/apex
@@ -44,6 +46,18 @@ if f:
     for k, v in zip(hyp.keys(), np.loadtxt(f[0])):
         hyp[k] = v
 
+augments = {
+    'hsv': 0.1,
+    'blur': 0.1,
+    'pepper': 0.1,
+    'shear': 0.1,
+    'translate': 0.1,
+    'rotate': 0.1,
+    'flip': 0.1,
+    'scale': 0.1,
+    'noise': 0.1,
+}
+
 
 def train(lr=1e-3):
     cfg = opt.cfg
@@ -68,7 +82,8 @@ def train(lr=1e-3):
 
     # Configure run
     data_dict = parse_data_cfg(data)
-    train_path = data_dict['train']
+    train_list = data_dict['train']
+    val_list = data_dict['valid']
     nc = int(data_dict['classes'])  # number of classes
 
     # Initialize model
@@ -122,34 +137,54 @@ def train(lr=1e-3):
         model = torch.nn.parallel.DistributedDataParallel(model)
         model.yolo_layers = model.module.yolo_layers  # move yolo layer indices to top level
 
-    # Dataset
-    dataset = LoadImagesAndLabels(
-        train_path,
-        img_size,
-        batch_size,
-        augment=True,
-        hyp=hyp,  # augmentation hyperparameters
-        rect=opt.rect,  # rectangular training
-        image_weights=opt.img_weights,
-        cache_labels=True if epochs > 10 else False,
-        cache_images=False if opt.prebias else opt.cache_images)
-
+    # # Dataset
+    # dataset = LoadImagesAndLabels(
+    #     train_list,
+    #     img_size,
+    #     batch_size,
+    #     augment=True,
+    #     hyp=hyp,  # augmentation hyperparameters
+    #     rect=opt.rect,  # rectangular training
+    #     image_weights=opt.img_weights,
+    #     cache_labels=True if epochs > 10 else False,
+    #     cache_images=False if opt.prebias else opt.cache_images)
     # Dataloader
-    dataloader = torch.utils.data.DataLoader(
-        dataset,
+
+    train_data = DetectionDataset(
+        train_list,
+        './tmp/yolot',
+        cache_len=1000,
+        img_size=img_size,
+        augments=augments,
+    )
+
+    train_loader = DataLoader(
+        train_data,
         batch_size=batch_size,
         #  num_workers=min([os.cpu_count(), batch_size, 16]),
-        shuffle=not opt.
-        rect,  # Shuffle=True unless rectangular training is used
+        shuffle=True,
         pin_memory=True,
-        collate_fn=dataset.collate_fn)
+        collate_fn=train_data.collate_fn)
+    val_data = DetectionDataset(
+        val_list,
+        './tmp/yolov',
+        cache_len=1000,
+        img_size=img_size,
+    )
 
+    val_loader = DataLoader(
+        val_data,
+        batch_size=batch_size,
+        #  num_workers=min([os.cpu_count(), batch_size, 16]),
+        shuffle=True,
+        pin_memory=True,
+        collate_fn=val_data.collate_fn)
     # Start training
     model.nc = nc  # attach number of classes to model
     model.arc = opt.arc  # attach yolo architecture
     model.hyp = hyp  # attach hyperparameters to model
     # model.class_weights = labels_to_class_weights(dataset.labels, nc).to(device)  # attach class weights
-    nb = len(dataloader)
+    nb = len(train_loader)
     maps = np.zeros(nc)  # mAP per class
     results = (
         0, 0, 0, 0, 0, 0, 0
@@ -163,18 +198,18 @@ def train(lr=1e-3):
                                      'total', 'targets', 'img_size'))
 
         # Update image weights (optional)
-        if dataset.image_weights:
-            w = model.class_weights.cpu().numpy() * (1 -
-                                                     maps)**2  # class weights
-            image_weights = labels_to_image_weights(dataset.labels,
-                                                    nc=nc,
-                                                    class_weights=w)
-            dataset.indices = random.choices(range(dataset.n),
-                                             weights=image_weights,
-                                             k=dataset.n)  # rand weighted idx
+        # if dataset.image_weights:
+        #     w = model.class_weights.cpu().numpy() * (1 -
+        #                                              maps)**2  # class weights
+        #     image_weights = labels_to_image_weights(dataset.labels,
+        #                                             nc=nc,
+        #                                             class_weights=w)
+        #     dataset.indices = random.choices(range(dataset.n),
+        #                                      weights=image_weights,
+        #                                      k=dataset.n)  # rand weighted idx
 
         mloss = torch.zeros(4).to(device)  # mean losses
-        pbar = tqdm(enumerate(dataloader), total=nb)  # progress bar
+        pbar = tqdm(enumerate(train_loader), total=nb)  # progress bar
         for i, (
                 imgs, targets, paths, _
         ) in pbar:  # batch -------------------------------------------------------------
@@ -200,7 +235,10 @@ def train(lr=1e-3):
             # Plot images with bounding boxes
             if ni == 0:
                 fname = 'train_batch%g.jpg' % i
-                # plot_images(imgs=imgs, targets=targets, paths=paths, fname=fname)
+                plot_images(imgs=imgs,
+                            targets=targets,
+                            paths=paths,
+                            fname=fname)
                 # if tb_writer:
                 #     tb_writer.add_image(fname, cv2.imread(fname)[:, :, ::-1], dataformats='HWC')
 
@@ -245,6 +283,7 @@ def train(lr=1e-3):
                 results, maps = test.test(
                     cfg,
                     data,
+                    val_loader,
                     batch_size=batch_size,
                     img_size=opt.img_size,
                     model=model,
