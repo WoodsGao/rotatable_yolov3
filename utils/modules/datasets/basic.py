@@ -1,8 +1,9 @@
 import os
 import torch
 from random import randint
-from threading import Thread
-from queue import Queue
+# from threading import Thread
+# from queue import Queue
+from torch.multiprocessing import Process, Queue
 
 
 class BasicDataset(torch.utils.data.Dataset):
@@ -32,8 +33,9 @@ class BasicDataset(torch.utils.data.Dataset):
             self.cache_len = cache_len
             self.cache_memory = [None for i in range(cache_len)]
             self.cache_worker_queue = Queue(0)
-            t = Thread(target=self.worker)
-            t.setDaemon(True)
+            # t = Thread(target=self.worker)
+            # t.setDaemon(True)
+            t = Process(target=self.worker)
             t.start()
 
     def worker(self):
