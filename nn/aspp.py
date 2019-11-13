@@ -27,7 +27,7 @@ class Aspp(nn.Module):
         blocks.append(AsppPooling(in_channels, out_channels))
         self.blocks = nn.ModuleList(blocks)
         self.project = nn.Sequential(
-            BLD(out_channels * len(blocks), out_channels, 1), nn.Dropout(0.5))
+            BLD(out_channels * len(blocks), out_channels, 1))
 
     def forward(self, x):
         outputs = []

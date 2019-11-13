@@ -18,7 +18,7 @@ class DenseBlock(nn.Module):
                  out_channels,
                  stride=1,
                  dilation=1,
-                 drop_rate=0.5,
+                 drop_rate=0,
                  se_block=False):
         super(DenseBlock, self).__init__()
         assert in_channels == out_channels or 2 * in_channels == out_channels
