@@ -12,17 +12,16 @@ class PerspectiveProject:
     def __call__(self, img, det=None, seg=None):
         img = cv2.warpPerspective(img, self.matrix, self.shape)
         if det is not None:
-            new_det = list()
-            # detection n*(x1 y1 x2 y2 x3 y3 x4 y4)
-            for i in range(4):
-                point = np.concatenate(
-                    [det[:, 2 * i:2 * i + 2],
-                     np.ones([det.shape[0], 1])], 1)
-                point = np.dot(self.matrix,
-                               point.transpose(1, 0)).transpose(1, 0)
-                point[:, :2] /= point[:, 2:]
-                new_det.append(point[:, :2])
-            det = np.concatenate(new_det, 1)
+            if len(det):
+                # detection n*(x1 y1 x2 y2 x3 y3 x4 y4)
+                n = len(det)
+                xs = det[:, ::2]
+                ys = det[:, 1::2]
+                ones = np.ones_like(xs)
+                det = np.float32([xs, ys, ones]).reshape(3, n * 4)
+                det = np.dot(self.matrix, det)
+                det /= det[2]
+                det = det.reshape(3, n, 4).transpose(1, 2, 0)[:, :, :2].reshape(-1, 8)
         if seg is not None:
             seg = cv2.warpPerspective(seg, self.matrix, self.shape)
         return img, det, seg
