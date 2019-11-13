@@ -3,7 +3,8 @@ import argparse
 import torch.distributed as dist
 import torch.optim as optim
 import torch.optim.lr_scheduler as lr_scheduler
-
+import torch.nn.functional as F
+from tqdm import tqdm
 import test  # import test.py to get mAP after each epoch
 from models import *
 from utils.datasets import *
@@ -208,42 +209,25 @@ def train(lr=1e-3):
         #                                      weights=image_weights,
         #                                      k=dataset.n)  # rand weighted idx
 
-        mloss = torch.zeros(4).to(device)  # mean losses
         pbar = tqdm(enumerate(train_loader), total=nb)  # progress bar
-        for i, (
-                imgs, targets, paths, _
+        for idx, (
+                inputs, targets, paths, _
         ) in pbar:  # batch -------------------------------------------------------------
-            ni = i + nb * epoch  # number integrated batches (since train start)
-            imgs = imgs.to(device)
+            total_loss = torch.zeros(4).to(device)  # mean losses
+            batch_idx = idx + 1
+            # TODO show_batch
+            # if idx == 0:
+            #     show_batch('train_batch.png', inputs, targets, classes)
+            inputs = inputs.to(device)
             targets = targets.to(device)
-
-            # Multi-Scale training
-            if multi_scale:
-                if ni / accumulate % 10 == 0:  #  adjust (67% - 150%) every 10 batches
-                    img_size = random.randrange(img_sz_min,
-                                                img_sz_max + 1) * 32
-                sf = img_size / max(imgs.shape[2:])  # scale factor
-                if sf != 1:
-                    ns = [
-                        math.ceil(x * sf / 32.) * 32 for x in imgs.shape[2:]
-                    ]  # new shape (stretched to 32-multiple)
-                    imgs = F.interpolate(imgs,
-                                         size=ns,
-                                         mode='bilinear',
-                                         align_corners=False)
-
-            # Plot images with bounding boxes
-            if ni == 0:
-                fname = 'train_batch%g.jpg' % i
-                plot_images(imgs=imgs,
-                            targets=targets,
-                            paths=paths,
-                            fname=fname)
-                # if tb_writer:
-                #     tb_writer.add_image(fname, cv2.imread(fname)[:, :, ::-1], dataformats='HWC')
+            if multi_scale and (inputs.size(3) != img_size):
+                inputs = F.interpolate(inputs,
+                                       size=img_size,
+                                       mode='bilinear',
+                                       align_corners=False)
 
             # Run model
-            pred = model(imgs)
+            pred = model(inputs)
 
             # Compute loss
             loss, loss_items = compute_loss(pred, targets, model)
@@ -261,20 +245,24 @@ def train(lr=1e-3):
             else:
                 loss.backward()
 
-            # Accumulate gradient for x batches before optimizing
-            if ni % accumulate == 0:
-                optimizer.step()
-                optimizer.zero_grad()
-
             # Print batch results
-            mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
+            total_loss += loss_items
+            mloss = total_loss / batch_idx  # update mean losses
             mem = torch.cuda.memory_cached() / 1E9 if torch.cuda.is_available(
             ) else 0  # (GB)
             s = ('%10s' * 2 + '%10.3g' * 6) % ('%g/%g' % (epoch, epochs - 1),
                                                '%.3gG' % mem, *mloss,
                                                len(targets), img_size)
             pbar.set_description(s)
+            if batch_idx % accumulate == 0 or \
+                    batch_idx == len(train_loader):
+                optimizer.step()
+                optimizer.zero_grad()
 
+                # multi scale
+                if multi_scale:
+                    img_size = random.randrange(img_size_min,
+                                                img_size_max) * 32
             # end batch ------------------------------------------------------------------------------------------------
 
         # Calculate mAP (always test final epoch, skip first 10 if opt.nosave)

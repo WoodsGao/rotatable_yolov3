@@ -335,12 +335,9 @@ def compute_loss(p, targets, model):  # predictions, targets, model
     ft = torch.cuda.FloatTensor if p[0].is_cuda else torch.Tensor
     lcls, lbox, lobj = ft([0]), ft([0]), ft([0])
     tcls, tbox, indices, anchor_vec = build_targets(model, targets)
-    h = model.hyp  # hyperparameters
-    arc = model.arc  # # (default, uCE, uBCE) detection architectures
-
     # Define criteria
-    BCEcls = nn.BCEWithLogitsLoss(pos_weight=ft([h['cls_pw']]))
-    BCEobj = nn.BCEWithLogitsLoss(pos_weight=ft([h['obj_pw']]))
+    BCEcls = nn.BCEWithLogitsLoss()
+    BCEobj = nn.BCEWithLogitsLoss()
     BCE = nn.BCEWithLogitsLoss(reduction='none')
     CE = nn.CrossEntropyLoss(reduction='none')  # weight=model.class_weights
 
@@ -384,9 +381,9 @@ def compute_loss(p, targets, model):  # predictions, targets, model
         bce = BCE(pi[..., 4], tobj)
         lobj += bce.mean()  # obj loss
 
-    lbox *= h['giou']
-    lobj *= h['obj']
-    lcls *= h['cls']
+    lbox *= 3.31
+    lobj *= 42.4
+    lcls *= 40
     loss = lbox + lobj + lcls
     return loss, torch.cat((lbox, lobj, lcls, loss)).detach()
 
@@ -396,13 +393,13 @@ def build_targets(model, targets):
 
     nt = len(targets)
     tcls, tbox, indices, av = [], [], [], []
-    # multi_gpu = type(model) in (nn.parallel.DataParallel, nn.parallel.DistributedDataParallel)
+    multi_gpu = type(model) in (nn.parallel.DataParallel, nn.parallel.DistributedDataParallel)
     for i in model.yolo_layers:
         # get number of grid points and anchor vec for this yolo layer
-        # if multi_gpu:
-        #     ng, anchor_vec = model.module.module_list[i].ng, model.module.module_list[i].anchor_vec
-        # else:
-        ng, anchor_vec = i.ng, i.anchor_vec
+        if multi_gpu:
+            ng, anchor_vec = model.module.module_list[i].ng, model.module.module_list[i].anchor_vec
+        else:
+            ng, anchor_vec = i.ng, i.anchor_vec
 
         # iou of targets-anchors
         t, a = targets, []
@@ -410,21 +407,15 @@ def build_targets(model, targets):
         if nt:
             iou = torch.stack([wh_iou(x, gwh) for x in anchor_vec], 0)
 
-            use_best_anchor = False
-            if use_best_anchor:
-                iou, a = iou.max(0)  # best iou and anchor
-            else:  # use all anchors
-                na = len(anchor_vec)  # number of anchors
-                a = torch.arange(na).view((-1, 1)).repeat([1, nt]).view(-1)
-                t = targets.repeat([na, 1])
-                gwh = gwh.repeat([na, 1])
-                iou = iou.view(-1)  # use all ious
+            na = len(anchor_vec)  # number of anchors
+            a = torch.arange(na).view((-1, 1)).repeat([1, nt]).view(-1)
+            t = targets.repeat([na, 1])
+            gwh = gwh.repeat([na, 1])
+            iou = iou.view(-1)  # use all ious
 
             # reject anchors below iou_thres (OPTIONAL, increases P, lowers R)
-            reject = True
-            if reject:
-                j = iou > model.hyp['iou_t']  # iou threshold hyperparameter
-                t, a, gwh = t[j], a[j], gwh[j]
+            j = iou > model.hyp['iou_t']  # iou threshold hyperparameter
+            t, a, gwh = t[j], a[j], gwh[j]
 
         # Indices
         b, c = t[:, :2].long().t()  # target image, class
@@ -504,7 +495,7 @@ def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.5):
         pred = pred[(-pred[:, 4]).argsort()]
 
         det_max = []
-        nms_style = 'MERGE'  # 'OR' (default), 'AND', 'MERGE' (experimental)
+        nms_style = 'OR'  # 'OR' (default), 'AND', 'MERGE' (experimental)
         for c in pred[:, -1].unique():
             dc = pred[pred[:, -1] == c]  # select class c
             n = len(dc)
