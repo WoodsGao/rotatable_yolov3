@@ -86,7 +86,7 @@ class DetectionDataset(BasicDataset):
         img /= 255.
         img = img.transpose(2, 0, 1)
         img = np.ascontiguousarray(img)
-        return torch.FloatTensor(img), bboxes, self.data[idx][0], (h, w)
+        return torch.FloatTensor(img), torch.FloatTensor(bboxes), self.data[idx][0], (h, w)
 
     @staticmethod
     def collate_fn(batch):
