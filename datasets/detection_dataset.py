@@ -58,7 +58,7 @@ class DetectionDataset(BasicDataset):
         h, w, c = img.shape
         img = np.float32(img)
         bboxes = self.data[idx][1]
-        classes = [b[0] for b in bboxes]
+        classes = np.float32([b[0] for b in bboxes])
         det = np.zeros([len(bboxes), 8])
         for bi, b in enumerate(bboxes):
             det[bi] = b[1:]
@@ -70,29 +70,23 @@ class DetectionDataset(BasicDataset):
         det[:, 0::2] /= w
         det[:, 1::2] /= h
         det = det.clip(0, 1)
-        bboxes = []
-        for c, d in zip(classes, det):
-            xs = d[0::2]
-            ys = d[1::2]
-            xmax = xs.max()
-            xmin = xs.min()
-            ymax = ys.max()
-            ymin = ys.min()
-            if ymax - ymin < 3. / h or xmax - xmin < 3. / w:
-                continue
-            x = (xmax + xmin) / 2
-            y = (ymax + ymin) / 2
-            w = x - xmin
-            h = y - ymin
-            bboxes.append([0, c, x, y, w, h])
-        bboxes_tensor = torch.zeros((len(bboxes), 6))
-        if len(bboxes):
-            bboxes_tensor = torch.FloatTensor(bboxes)
+        xs = det[:, ::2]
+        ys = det[:, 1::2]
+        xmax = xs.max(1)
+        ymax = ys.max(1)
+        xmin = xs.min(1)
+        ymin = ys.min(1)
+        x = (xmax + xmin) / 2
+        y = (ymax + ymin) / 2
+        w = x - xmin
+        h = y - ymin
+        zeros = np.zeros_like(classes)
+        bboxes = np.stack([zeros, classes, x, y, w, h], 1)
         img = img[:, :, ::-1]
         img /= 255.
         img = img.transpose(2, 0, 1)
         img = np.ascontiguousarray(img)
-        return torch.FloatTensor(img), bboxes_tensor, self.data[idx][0], (h, w)
+        return torch.FloatTensor(img), bboxes, self.data[idx][0], (h, w)
 
     @staticmethod
     def collate_fn(batch):
