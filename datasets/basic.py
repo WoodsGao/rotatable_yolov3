@@ -1,6 +1,7 @@
 import torch
 import random
 from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
 
 class BasicDataset(torch.utils.data.Dataset):
@@ -13,11 +14,14 @@ class BasicDataset(torch.utils.data.Dataset):
         self.classes = []
         self.build_data()
         self.cache_list = []
+        pool = ThreadPoolExecutor()
+        step = 64
         if cache_size > 0:
             print('preloading')
-            pbar = tqdm(range(len(self.data)))
+            pbar = tqdm(range(0, len(self.data), step))
             for idx in pbar:
-                self.cache_list.append(self.get_item(idx))
+                self.cache_list += list(
+                    pool.map(self.get_item, range(idx, idx + step)))
                 size = self.get_cache_size(self.cache_list) / 1e6
                 pbar.set_description('%10g/%10g' % (size, cache_size))
                 if size > cache_size:
