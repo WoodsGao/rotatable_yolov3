@@ -20,8 +20,8 @@ class BLD(nn.Module):
         if activate is None:
             activate = EmptyLayer()
         self.block = nn.Sequential(
-            nn.BatchNorm2d(in_channels) if in_channels % 16 != 0 else
-            nn.GroupNorm(16, in_channels), activate,
+            nn.BatchNorm2d(in_channels) if in_channels % 32 != 0 else
+            nn.GroupNorm(32, in_channels), activate,
             nn.Conv2d(in_channels *
                       2 if isinstance(activate, CReLU) else in_channels,
                       out_channels,
