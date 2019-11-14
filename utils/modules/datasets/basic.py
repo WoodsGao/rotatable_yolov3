@@ -12,7 +12,7 @@ class BasicDataset(torch.utils.data.Dataset):
         self.classes = []
         self.build_data()
         self.max_cache_size = cache_size * 1000
-        self.cache_list = [None for i in range(self.data)]
+        self.cache_list = [None for i in range(len(self.data))]
         self.cache_size = self.get_cache_size(self.cache_list)
 
     def get_cache_size(self, data):
