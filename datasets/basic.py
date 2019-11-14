@@ -1,6 +1,6 @@
 import torch
-from torch.multiprocessing import Manager, Value
 import random
+from tqdm import tqdm
 
 
 class BasicDataset(torch.utils.data.Dataset):
@@ -12,10 +12,17 @@ class BasicDataset(torch.utils.data.Dataset):
         self.data = []
         self.classes = []
         self.build_data()
-        self.max_cache_size = cache_size * 1e6
-        self.manager = Manager()
-        self.cache_list = self.manager.list([None for i in range(len(self.data))])
-        self.cache_size = Value('l', self.get_cache_size(self.cache_list))
+        self.cache_list = []
+        if cache_size > 0:
+            print('preloading')
+            pbar = tqdm(range(len(self.data)))
+            for idx in pbar:
+                self.cache_list.append(self.get_item(idx))
+                size = self.get_cache_size(self.cache_list) / 1e6
+                pbar.set_description('%10g/%10g' % (size, cache_size))
+                if size > cache_size:
+                    print('preloader')
+                    break
 
     def get_cache_size(self, data):
         size = 0
@@ -34,17 +41,10 @@ class BasicDataset(torch.utils.data.Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        if self.cache_list[idx] is not None:
-            if random.random() < 0.5:
-                item = self.cache_list[idx]
-            else:
-                item = self.get_item(idx)
-                self.cache_list[idx] = item
+        if idx < len(self.cache_list) and random.random() < 0.5:
+            item = self.cache_list[idx]
         else:
             item = self.get_item(idx)
-            if self.cache_size.value < self.max_cache_size:
-                self.cache_list[idx] = item
-                self.cache_size.value = self.get_cache_size(self.cache_list)
         return item
 
     def build_data(self):
