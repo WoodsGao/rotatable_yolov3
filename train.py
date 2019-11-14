@@ -91,13 +91,13 @@ def train(lr=1e-3):
     model = YOLOV3(80).to(device)
 
     if opt.adam:
-        optimizer = optim.Adam(model.parameters(), lr=lr, amsgrad=True)
+        optimizer = AdaBoundW(model.parameters(), lr=lr, weight_decay=5e-4, eps=1e-4)
     else:
         optimizer = optim.SGD(
             model.parameters(),
             lr=lr,
             momentum=0.9,
-            #   weight_decay=5e-4,
+            weight_decay=5e-4,
             nesterov=True)
     epoch = 0
     best_mAP = 0
@@ -153,7 +153,7 @@ def train(lr=1e-3):
 
     train_data = DetectionDataset(
         train_list,
-        cache_size=3000,
+        cache_size=0,
         img_size=img_size,
         augments=augments,
     )
@@ -168,7 +168,7 @@ def train(lr=1e-3):
     if not opt.notest:
         val_data = DetectionDataset(
             val_list,
-            cache_size=3000,
+            cache_size=0,
             img_size=img_size,
         )
 
@@ -192,6 +192,7 @@ def train(lr=1e-3):
     print('Starting %s for %g epochs...' %
           ('prebias' if opt.prebias else 'training', epochs))
     while epoch < epochs:  # epoch ------------------------------------------------------------------
+        total_loss = torch.zeros(4).to(device)  # mean losses
         model.train()
         print(('\n' + '%10s' * 8) % ('Epoch', 'gpu_mem', 'GIoU', 'obj', 'cls',
                                      'total', 'targets', 'img_size'))
@@ -211,7 +212,6 @@ def train(lr=1e-3):
         for idx, (
                 inputs, targets, paths, _
         ) in pbar:  # batch -------------------------------------------------------------
-            total_loss = torch.zeros(4).to(device)  # mean losses
             batch_idx = idx + 1
             # TODO show_batch
             # if idx == 0:

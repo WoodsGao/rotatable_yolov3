@@ -338,8 +338,8 @@ def compute_loss(p, targets, model):  # predictions, targets, model
     # Define criteria
     BCEcls = nn.BCEWithLogitsLoss()
     BCEobj = nn.BCEWithLogitsLoss()
-    BCE = nn.BCEWithLogitsLoss(reduction='none')
-    CE = nn.CrossEntropyLoss(reduction='none')  # weight=model.class_weights
+    BCE = nn.BCEWithLogitsLoss()
+    CE = nn.CrossEntropyLoss()  # weight=model.class_weights
 
     # Compute losses
     for i, pi in enumerate(p):  # layer index, layer predictions
@@ -368,7 +368,7 @@ def compute_loss(p, targets, model):  # predictions, targets, model
                 t[range(nb), tcls[i]] = 1.0
                 # lcls += BCE(ps[:, 5:], t).mean()  # BCE
                 ce = CE(ps[:, 5:], tcls[i])  # CE
-                lcls += ce.mean()
+                lcls += ce
 
                 # Instance-class weighting (use with reduction='none')
                 # nt = t.sum(0) + 1  # number of targets per class
@@ -379,7 +379,7 @@ def compute_loss(p, targets, model):  # predictions, targets, model
             # with open('targets.txt', 'a') as file:
             #     [file.write('%11.5g ' * 4 % tuple(x) + '\n') for x in torch.cat((txy[i], twh[i]), 1)]
         bce = BCE(pi[..., 4], tobj)
-        lobj += bce.mean()  # obj loss
+        lobj += bce  # obj loss
 
     lbox *= 3.31
     lobj *= 42.4
@@ -393,11 +393,13 @@ def build_targets(model, targets):
 
     nt = len(targets)
     tcls, tbox, indices, av = [], [], [], []
-    multi_gpu = type(model) in (nn.parallel.DataParallel, nn.parallel.DistributedDataParallel)
+    multi_gpu = type(model) in (nn.parallel.DataParallel,
+                                nn.parallel.DistributedDataParallel)
     for i in model.yolo_layers:
         # get number of grid points and anchor vec for this yolo layer
         if multi_gpu:
-            ng, anchor_vec = model.module.module_list[i].ng, model.module.module_list[i].anchor_vec
+            ng, anchor_vec = model.module.module_list[
+                i].ng, model.module.module_list[i].anchor_vec
         else:
             ng, anchor_vec = i.ng, i.anchor_vec
 
