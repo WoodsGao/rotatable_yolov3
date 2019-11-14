@@ -1,4 +1,5 @@
 import torch
+from torch.multiprocessing import Manager, Value
 import random
 
 
@@ -12,8 +13,9 @@ class BasicDataset(torch.utils.data.Dataset):
         self.classes = []
         self.build_data()
         self.max_cache_size = cache_size * 1e6
-        self.cache_list = [None for i in range(len(self.data))]
-        self.cache_size = self.get_cache_size(self.cache_list)
+        self.manager = Manager()
+        self.cache_list = self.manager.list([None for i in range(len(self.data))])
+        self.cache_size = Value('l', self.get_cache_size(self.cache_list))
 
     def get_cache_size(self, data):
         size = 0
@@ -40,9 +42,9 @@ class BasicDataset(torch.utils.data.Dataset):
                 self.cache_list[idx] = item
         else:
             item = self.get_item(idx)
-            if self.cache_size < self.max_cache_size:
+            if self.cache_size.value < self.max_cache_size:
                 self.cache_list[idx] = item
-                self.cache_size = self.get_cache_size(self.cache_list)
+                self.cache_size.value = self.get_cache_size(self.cache_list)
         return item
 
     def build_data(self):
