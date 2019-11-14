@@ -153,8 +153,6 @@ def train(lr=1e-3):
 
     train_data = DetectionDataset(
         train_list,
-        './tmp/yolot',
-        cache_len=1000,
         img_size=img_size,
         augments=augments,
     )
@@ -168,8 +166,6 @@ def train(lr=1e-3):
         collate_fn=train_data.collate_fn)
     val_data = DetectionDataset(
         val_list,
-        './tmp/yolov',
-        cache_len=1000,
         img_size=img_size,
     )
 

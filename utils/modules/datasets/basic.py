@@ -1,76 +1,48 @@
-import os
 import torch
-from random import randint
-# from threading import Thread
-# from queue import Queue
-from torch.multiprocessing import Process, Queue
+import random
 
 
 class BasicDataset(torch.utils.data.Dataset):
-    def __init__(self,
-                 path,
-                 cache_dir=None,
-                 cache_len=3000,
-                 img_size=224,
-                 augments={}):
+    def __init__(self, path, cache_size=0, img_size=224, augments={}):
         super(BasicDataset, self).__init__()
         self.path = path
-        if cache_dir is not None:
-            os.makedirs(cache_dir, exist_ok=True)
-            self.cache = True
-        else:
-            self.cache = False
         self.img_size = img_size
         self.augments = augments
         self.data = []
         self.classes = []
         self.build_data()
-        if self.cache:
-            self.counts = [0 for i in self.data]
-            self.cache_path = [
-                os.path.join(cache_dir, str(i)) for i in range(len(self.data))
-            ]
-            self.cache_len = cache_len
-            self.cache_memory = [None for i in range(cache_len)]
-            self.cache_worker_queue = Queue(0)
-            # t = Thread(target=self.worker)
-            # t.setDaemon(True)
-            t = Process(target=self.worker)
-            t.start()
+        self.max_cache_size = cache_size * 1000
+        self.cache_list = [None for i in range(self.data)]
+        self.cache_size = self.get_cache_size(self.cache_list)
 
-    def worker(self):
-        while True:
-            idx = self.cache_worker_queue.get()
-            self.refresh_cache(idx)
-            self.cache_worker_queue.task_done()
-
-    def refresh_cache(self, idx):
-        item = self.get_item(idx)
-        if idx < self.cache_len:
-            self.cache_memory[idx] = item
-        torch.save(item, self.cache_path[idx])
-        self.counts[idx] = 0
-        return item
+    def get_cache_size(self, data):
+        size = 0
+        for d in data:
+            if d is None:
+                continue
+            if isinstance(d, tuple) or isinstance(d, list):
+                size += self.get_cache_size(d)
+            elif isinstance(d, torch.Tensor):
+                size += d.storage().__sizeof__()
+            else:
+                size += d.__sizeof__()
+        return size
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
-        if not self.cache:
-            return self.get_item(idx)
-        self.counts[idx] += 1
-        item = None
-        if idx < self.cache_len:
-            if self.cache_memory[idx] is not None:
-                item = self.cache_memory[idx]
-        if item is None:
-            try:
-                item = torch.load(self.cache_path[idx])
-                assert item[0].size(0) == self.img_size
-            except:
-                item = self.refresh_cache(idx)
-        if self.counts[idx] > randint(1, 5):
-            self.cache_worker_queue.put(idx)
+        if self.cache_list[idx] is not None:
+            if random.random() < 0.5:
+                item = self.cache_list[idx]
+            else:
+                item = self.get_item(idx)
+                self.cache_list[idx] = item
+        else:
+            item = self.get_item(idx)
+            if self.cache_size < self.max_cache_size:
+                self.cache_list[idx] = item
+                self.cache_size = self.get_cache_size(self.cache_list)
         return item
 
     def build_data(self):
