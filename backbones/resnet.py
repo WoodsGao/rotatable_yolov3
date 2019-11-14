@@ -17,7 +17,7 @@ class ResNet(nn.Module):
             block5_stride = 1
 
         self.block1 = nn.Sequential(
-            DBL(3, 32, 7),
+            nn.Conv2d(3, 32, 7, 1, 3, bias=False),
             ResBlock(32, 64, stride=2),
         )
         self.block2 = nn.Sequential(
