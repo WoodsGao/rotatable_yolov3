@@ -165,18 +165,19 @@ def train(lr=1e-3):
                               shuffle=True,
                               pin_memory=True,
                               collate_fn=train_data.collate_fn)
-    val_data = DetectionDataset(
-        val_list,
-        cache_size=3000,
-        img_size=img_size,
-    )
+    if not opt.notest:
+        val_data = DetectionDataset(
+            val_list,
+            cache_size=3000,
+            img_size=img_size,
+        )
 
-    val_loader = DataLoader(val_data,
-                            batch_size=batch_size,
-                            num_workers=min([os.cpu_count(), batch_size, 16]),
-                            shuffle=True,
-                            pin_memory=True,
-                            collate_fn=val_data.collate_fn)
+        val_loader = DataLoader(val_data,
+                                batch_size=batch_size,
+                                num_workers=min([os.cpu_count(), batch_size, 16]),
+                                shuffle=True,
+                                pin_memory=True,
+                                collate_fn=val_data.collate_fn)
     # Start training
     model.nc = nc  # attach number of classes to model
     model.arc = opt.arc  # attach yolo architecture
