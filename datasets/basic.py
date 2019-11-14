@@ -21,7 +21,8 @@ class BasicDataset(torch.utils.data.Dataset):
             pbar = tqdm(range(0, len(self.data), step))
             for idx in pbar:
                 self.cache_list += list(
-                    pool.map(self.get_item, range(idx, idx + step)))
+                    pool.map(self.get_item,
+                             range(idx, min(idx + step, len(self.data)))))
                 size = self.get_cache_size(self.cache_list) / 1e6
                 pbar.set_description('%10g/%10g' % (size, cache_size))
                 if size > cache_size:
