@@ -18,7 +18,6 @@ class DenseBlock(nn.Module):
                  out_channels,
                  stride=1,
                  dilation=1,
-                 drop_rate=0,
                  se_block=False):
         super(DenseBlock, self).__init__()
         assert in_channels == out_channels or 2 * in_channels == out_channels
@@ -33,17 +32,11 @@ class DenseBlock(nn.Module):
             BLD(in_channels, out_channels // 2, 1),
             BLD(
                 out_channels // 2,
-                out_channels // 2,
+                out_channels,
                 stride=stride,
                 dilation=dilation,
-                groups=out_channels // 2,
+                groups=32 if out_channels % 64 == 0 else 1,
             ),
-            BLD(
-                out_channels // 2,
-                out_channels,
-                1,
-            ),
-            nn.Dropout(drop_rate) if drop_rate > 0 else EmptyLayer(),
         )
 
     def forward(self, x):

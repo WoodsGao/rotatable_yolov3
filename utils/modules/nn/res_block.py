@@ -13,16 +13,16 @@ class ResBlock(nn.Module):
         if stride == 1 and in_channels == out_channels:
             self.downsample = EmptyLayer()
         else:
-            self.downsample = nn.Conv2d(in_channels, out_channels, 3, stride, 1)
+            self.downsample = nn.Conv2d(in_channels, out_channels, 3, stride,
+                                        1)
         self.block = nn.Sequential(
-            BLD(in_channels, out_channels // 4, 1),
+            BLD(in_channels, out_channels // 2, 1),
             BLD(
-                out_channels // 4,
-                out_channels // 4,
+                out_channels // 2,
+                out_channels,
                 dilation=dilation,
-                groups=out_channels // 4,
+                groups=32 if out_channels % 64 == 0 else 1,
             ),
-            BLD(out_channels // 4, out_channels, 1),
         )
 
     def forward(self, x):
