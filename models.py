@@ -12,14 +12,6 @@ from utils.utils import *
 ONNX_EXPORT = False
 
 
-class Swish(nn.Module):
-    def __init__(self):
-        super(Swish, self).__init__()
-
-    def forward(self, x):
-        return x * torch.sigmoid(x)
-
-
 class YOLOLayer(nn.Module):
     def __init__(self, anchors, nc, img_size, yolo_index):
         super(YOLOLayer, self).__init__()
@@ -109,7 +101,7 @@ class YOLOV3(nn.Module):
         super(YOLOV3, self).__init__()
         self.backbone = DenseNet()
         self.high_final = nn.Sequential(
-            nn.BatchNorm2d(1024),
+            nn.GroupNorm(32, 1024),
             Swish(),
             nn.Conv2d(1024,
                       len(anchors[-1]) * (5 + num_classes), 1),
@@ -123,7 +115,7 @@ class YOLOV3(nn.Module):
 
         self.high2middle = BLD(1024, 512)
         self.middle_final = nn.Sequential(
-            nn.BatchNorm2d(1024),
+            nn.GroupNorm(32, 1024),
             Swish(),
             nn.Conv2d(1024,
                       len(anchors[-2]) * (5 + num_classes), 1),
@@ -137,7 +129,7 @@ class YOLOV3(nn.Module):
 
         self.middle2low = BLD(1024, 256)
         self.low_final = nn.Sequential(
-            nn.BatchNorm2d(512),
+            nn.GroupNorm(32, 512),
             Swish(),
             nn.Conv2d(512,
                       len(anchors[-3]) * (5 + num_classes), 1),
