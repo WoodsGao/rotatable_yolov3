@@ -1,55 +1,91 @@
 import torch
+from torch.multiprocessing import Process, Queue
 import random
 from tqdm import tqdm
+import os
+import lmdb
+import pickle
+import base64
+import time
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
 
 class BasicDataset(torch.utils.data.Dataset):
-    def __init__(self, path, cache_size=0, img_size=224, augments={}):
+    def __init__(self, path, img_size=224, augments={}):
         super(BasicDataset, self).__init__()
+        os.makedirs('tmp')
         self.path = path
         self.img_size = img_size
         self.augments = augments
         self.data = []
         self.classes = []
         self.build_data()
+        self.data.sort()
+        self.checks = [[d, self.img_size] for d in self.data]
         self.cache_list = []
-        pool = ThreadPoolExecutor()
-        step = 64
-        if cache_size > 0:
-            print('preloading')
-            pbar = tqdm(range(0, len(self.data), step))
-            for idx in pbar:
-                self.cache_list += list(
-                    pool.map(self.get_item,
-                             range(idx, min(idx + step, len(self.data)))))
-                size = self.get_cache_size(self.cache_list) / 1e6
-                pbar.set_description('%10g/%10g' % (size, cache_size))
-                if size > cache_size:
-                    print('preloader')
-                    break
+        self.db_name = 'tmp/' + base64.b64encode(
+            os.path.abspath(path).encode('utf-8')).decode('utf-8')
+        self.init_db()
+        if len(augments):
+            p = Process(target=self.worker)
+            p.start()
 
-    def get_cache_size(self, data):
-        size = 0
-        for d in data:
-            if d is None:
-                continue
-            if isinstance(d, tuple) or isinstance(d, list):
-                size += self.get_cache_size(d)
-            elif isinstance(d, torch.Tensor):
-                size += d.storage().__sizeof__()
-            else:
-                size += d.__sizeof__()
-        return size
+    def init_db(self):
+        # init
+        min_key = 0
+        max_key = len(self.data)
+        dump_keys = []
+        db = lmdb.open(self.db_name, map_size=1e10, writemap=True)
+        txn = db.begin(write=True)
+        print('check db')
+        for key, value in tqdm(txn.cursor()):
+            ki = int.from_bytes(key, byteorder='little')
+            if min_key <= ki and ki < max_key:
+                try:
+                    check = pickle.loads(value)[1]
+                    if check == self.checks[ki]:
+                        continue
+                except Exception as e:
+                    print(e)
+            dump_keys.append(key)
+        for key in dump_keys:
+            txn.delete(key)
+        missed_keys = [
+            i for i in range(len(self.data))
+            if txn.get(i.to_bytes(10, 'little')) is None
+        ]
+        pool = ThreadPoolExecutor()
+        batch_size = 64
+        for ki in tqdm(range(0, len(missed_keys), batch_size)):
+            items = list(
+                pool.map(self.get_item, missed_keys[ki:ki + batch_size]))
+            items = list(
+                pool.map(pickle.dumps,
+                         [[item, self.checks[key]]
+                          for item, key in zip(items, missed_keys[ki:ki + batch_size])]))
+            for item, key in zip(items, missed_keys[ki:ki + batch_size]):
+                txn.put(key.to_bytes(10, 'little'), value=item)
+            # break
+        txn.commit()
+        db.close()
+
+    def worker(self):
+        while True:
+            for idx, data in enumerate(self.data):
+                item = self.get_item(idx)
+                item = pickle.dumps([item, self.checks[idx]])
+                with lmdb.open(self.db_name, map_size=1e10) as db:
+                    with db.begin(write=True) as txn:
+                        txn.put(idx.to_bytes(10, 'little'), value=item)
+                time.sleep(0.1)
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
-        if idx < len(self.cache_list) and random.random() < 0.5:
-            item = self.cache_list[idx]
-        else:
-            item = self.get_item(idx)
+        with lmdb.open(self.db_name, map_size=1e10) as db:
+            with db.begin() as txn:
+                item = pickle.loads(txn.get(idx.to_bytes(10, 'little')))[0]
         return item
 
     def build_data(self):
