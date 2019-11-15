@@ -91,7 +91,7 @@ def train(lr=1e-3):
     model = YOLOV3(80).to(device)
 
     if opt.adam:
-        optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=5e-4)
+        optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=5e-4)
     else:
         optimizer = optim.SGD(
             model.parameters(),

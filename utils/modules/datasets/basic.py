@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 class BasicDataset(torch.utils.data.Dataset):
     def __init__(self, path, img_size=224, augments={}):
         super(BasicDataset, self).__init__()
-        os.makedirs('tmp')
+        os.makedirs('tmp', exist_ok=True)
         self.path = path
         self.img_size = img_size
         self.augments = augments
@@ -35,7 +35,7 @@ class BasicDataset(torch.utils.data.Dataset):
         min_key = 0
         max_key = len(self.data)
         dump_keys = []
-        db = lmdb.open(self.db_name, map_size=1e10, writemap=True)
+        db = lmdb.open(self.db_name, map_size=1e12, writemap=True)
         txn = db.begin(write=True)
         print('check db')
         for key, value in tqdm(txn.cursor()):
@@ -74,7 +74,7 @@ class BasicDataset(torch.utils.data.Dataset):
             for idx, data in enumerate(self.data):
                 item = self.get_item(idx)
                 item = pickle.dumps([item, self.checks[idx]])
-                with lmdb.open(self.db_name, map_size=1e10) as db:
+                with lmdb.open(self.db_name, map_size=1e12) as db:
                     with db.begin(write=True) as txn:
                         txn.put(idx.to_bytes(10, 'little'), value=item)
                 time.sleep(0.1)
@@ -83,7 +83,7 @@ class BasicDataset(torch.utils.data.Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        with lmdb.open(self.db_name, map_size=1e10) as db:
+        with lmdb.open(self.db_name, map_size=1e12) as db:
             with db.begin() as txn:
                 item = pickle.loads(txn.get(idx.to_bytes(10, 'little')))[0]
         return item
