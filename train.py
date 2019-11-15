@@ -338,7 +338,7 @@ if __name__ == '__main__':
                         help='cfg file path')
     parser.add_argument('--data',
                         type=str,
-                        default='mark.data',
+                        default='tt100k.data',
                         help='*.data file path')
     parser.add_argument('--multi-scale',
                         action='store_true',
