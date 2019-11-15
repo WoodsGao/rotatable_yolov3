@@ -91,7 +91,7 @@ def train(lr=1e-3):
     model = YOLOV3(80).to(device)
 
     if opt.adam:
-        optimizer = AdaBoundW(model.parameters(), lr=lr, weight_decay=5e-4)
+        optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=5e-4)
     else:
         optimizer = optim.SGD(
             model.parameters(),
@@ -153,22 +153,19 @@ def train(lr=1e-3):
 
     train_data = DetectionDataset(
         train_list,
-        cache_size=0,
         img_size=img_size,
         augments=augments,
     )
 
     train_loader = DataLoader(train_data,
                               batch_size=batch_size,
-                              num_workers=min([os.cpu_count(), batch_size,
-                                               16]),
+                              num_workers=min([os.cpu_count(), batch_size, 16]),
                               shuffle=True,
                               pin_memory=True,
                               collate_fn=train_data.collate_fn)
     if not opt.notest:
         val_data = DetectionDataset(
             val_list,
-            cache_size=0,
             img_size=img_size,
         )
 
@@ -229,9 +226,13 @@ def train(lr=1e-3):
 
             # Compute loss
             loss, loss_items = compute_loss(pred, targets, model)
+
             if not torch.isfinite(loss):
-                print('WARNING: non-finite loss, ending training ', loss_items)
-                return results
+                print('WARNING: non-finite loss, continue training ', loss_items)
+                continue
+            if loss <= 0:
+                print('WARNING: non-positive loss, continue training ', loss_items)
+                continue
 
             # Scale loss by nominal batch_size of 64
             loss *= batch_size / 64
@@ -337,7 +338,7 @@ if __name__ == '__main__':
                         help='cfg file path')
     parser.add_argument('--data',
                         type=str,
-                        default='tt100k.data',
+                        default='mark.data',
                         help='*.data file path')
     parser.add_argument('--multi-scale',
                         action='store_true',
