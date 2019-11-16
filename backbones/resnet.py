@@ -17,36 +17,36 @@ class ResNet(nn.Module):
             block5_stride = 1
 
         self.block1 = nn.Sequential(
-            nn.Conv2d(3, 64, 7, 1, 3, bias=False),
-            ResBlock(64, 128, stride=2),
+            nn.Conv2d(3, 32, 7, 1, 3, bias=False),
+            ResBlock(32, 64, stride=2),
         )
         self.block2 = nn.Sequential(
+            ResBlock(64, 128, stride=2),
+            ResBlock(128, 128),
+            ResBlock(128, 128),
+            ResBlock(128, 128),
+        )
+        self.block3 = nn.Sequential(
             ResBlock(128, 256, stride=2),
             ResBlock(256, 256),
             ResBlock(256, 256),
             ResBlock(256, 256),
-        )
-        self.block3 = nn.Sequential(
-            ResBlock(256, 512, stride=2),
-            ResBlock(512, 512),
-            ResBlock(512, 512),
-            ResBlock(512, 512),
-            ResBlock(512, 512),
+            ResBlock(256, 256),
         )
         self.block4 = nn.Sequential(
-            ResBlock(512, 1024, stride=block4_stride),
-            ResBlock(1024, 1024),
-            ResBlock(1024, 1024),
-            ResBlock(1024, 1024),
-            ResBlock(1024, 1024),
-            ResBlock(1024, 1024),
-            ResBlock(1024, 1024),
+            ResBlock(256, 512, stride=block4_stride),
+            ResBlock(512, 512),
+            ResBlock(512, 512),
+            ResBlock(512, 512),
+            ResBlock(512, 512),
+            ResBlock(512, 512),
+            ResBlock(512, 512),
         )
         self.block5 = nn.Sequential(
-            ResBlock(1024, 2048, stride=block5_stride),
-            ResBlock(2048, 2048),
-            ResBlock(2048, 2048),
-            ResBlock(2048, 2048),
+            ResBlock(512, 1024, stride=block5_stride),
+            ResBlock(1024, 1024),
+            ResBlock(1024, 1024),
+            ResBlock(1024, 1024),
         )
 
     def forward(self, x):
