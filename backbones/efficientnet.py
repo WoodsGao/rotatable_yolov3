@@ -61,6 +61,14 @@ class EfficientNetB4(nn.Module):
             MbConv(448, 448, 3),
         )
 
+    def forward(self, x):
+        x = self.block1(x)
+        x = self.block2(x)
+        x = self.block3(x)
+        x = self.block4(x)
+        x = self.block5(x)
+        return x
+
 
 class EfficientNetB2(nn.Module):
     def __init__(self, output_stride=32):
@@ -109,3 +117,11 @@ class EfficientNetB2(nn.Module):
             MbConv(208, 352, 3),
             MbConv(352, 352, 3),
         )
+
+    def forward(self, x):
+        x = self.block1(x)
+        x = self.block2(x)
+        x = self.block3(x)
+        x = self.block4(x)
+        x = self.block5(x)
+        return x
