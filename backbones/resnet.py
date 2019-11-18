@@ -1,5 +1,5 @@
 import torch.nn as nn
-from ..nn import Swish, ResBlock, DBL
+from ..nn import Swish, ResBlock, CNS
 
 
 class ResNet(nn.Module):

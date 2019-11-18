@@ -1,5 +1,5 @@
 import torch.nn as nn
-from ..nn import DBL, Swish, XBlock, SeparableConv2d
+from ..nn import CNS, Swish, XBlock, SeparableConv2d
 
 
 class Xception(nn.Module):

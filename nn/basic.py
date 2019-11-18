@@ -1,5 +1,5 @@
 import torch.nn as nn
-from . import SELayer, Swish, CReLU
+from . import Swish
 
 
 class EmptyLayer(nn.Module):
@@ -7,60 +7,59 @@ class EmptyLayer(nn.Module):
         return x
 
 
-class BLD(nn.Module):
+# norm-swish-conv
+class NSC(nn.Module):
     def __init__(self,
                  in_channels,
                  out_channels,
                  ksize=3,
                  stride=1,
                  groups=1,
-                 dilation=1,
-                 activate=Swish()):
-        super(BLD, self).__init__()
-        if activate is None:
-            activate = EmptyLayer()
+                 dilation=1):
+        super(NSC, self).__init__()
         self.block = nn.Sequential(
-            nn.BatchNorm2d(in_channels) if in_channels % 32 != 0 else
-            nn.GroupNorm(32, in_channels), activate,
-            nn.Conv2d(in_channels *
-                      2 if isinstance(activate, CReLU) else in_channels,
-                      out_channels,
-                      ksize,
-                      stride=stride,
-                      padding=(ksize - 1) // 2 - 1 + dilation,
-                      groups=groups,
-                      dilation=dilation,
-                      bias=False))
+            EmptyLayer() if in_channels % 32 != 0 else nn.GroupNorm(
+                32, in_channels),
+            Swish(),
+            nn.Conv2d(
+                in_channels,
+                out_channels,
+                ksize,
+                stride=stride,
+                padding=(ksize - 1) // 2 - 1 + dilation,
+                groups=groups,
+                dilation=dilation,
+                bias=False,
+            ),
+        )
 
     def forward(self, x):
         return self.block(x)
 
 
-class DBL(nn.Module):
+class CNS(nn.Module):
     def __init__(self,
                  in_channels,
                  out_channels,
                  ksize=3,
                  stride=1,
                  groups=1,
-                 dilation=1,
-                 activate=Swish()):
-        super(DBL, self).__init__()
-        if activate is None:
-            activate = EmptyLayer()
+                 dilation=1):
+        super(CNS, self).__init__()
         self.block = nn.Sequential(
-            nn.Conv2d(in_channels,
-                      out_channels //
-                      2 if isinstance(activate, CReLU) else out_channels,
-                      ksize,
-                      stride=stride,
-                      padding=(ksize - 1) // 2 - 1 + dilation,
-                      groups=groups,
-                      dilation=dilation,
-                      bias=False),
-            nn.BatchNorm2d(out_channels) if out_channels % 16 != 0 else
-            nn.GroupNorm(16, out_channels),
-            activate,
+            nn.Conv2d(
+                in_channels,
+                out_channels,
+                ksize,
+                stride=stride,
+                padding=(ksize - 1) // 2 - 1 + dilation,
+                groups=groups,
+                dilation=dilation,
+            ),
+            EmptyLayer() if out_channels % 32 != 0 else nn.GroupNorm(
+                32, out_channels),
+            nn.GroupNorm(32, out_channels),
+            Swish(),
         )
 
     def forward(self, x):
