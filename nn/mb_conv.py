@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from . import Swish, CNS, SELayer, EmptyLayer
+from . import Swish, CNS, SELayer, EmptyLayer, DropConnect
 
 
 class MbConv(nn.Module):
@@ -28,7 +28,7 @@ class MbConv(nn.Module):
                 groups=mid_channels),
             SELayer(mid_channels),
             CNS(mid_channels, out_channels, 1),
-            nn.Dropout(drop_rate)
+            DropConnect(drop_rate)
             if self.add and drop_rate > 0 else EmptyLayer(),
         )
 
