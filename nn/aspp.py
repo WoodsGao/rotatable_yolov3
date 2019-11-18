@@ -8,7 +8,7 @@ class AsppPooling(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(AsppPooling, self).__init__()
         self.gap = nn.Sequential(nn.AdaptiveAvgPool2d(1),
-                                 NSC(in_channels, out_channels))
+                                 CNS(in_channels, out_channels))
 
     def forward(self, x):
         size = x.size()[2:]
@@ -21,13 +21,13 @@ class Aspp(nn.Module):
     def __init__(self, in_channels, out_channels, atrous_rates):
         super(Aspp, self).__init__()
         blocks = []
-        blocks.append(NSC(in_channels, out_channels, 1))
+        blocks.append(CNS(in_channels, out_channels, 1))
         for rate in atrous_rates:
-            blocks.append(NSC(in_channels, out_channels, dilation=rate))
+            blocks.append(CNS(in_channels, out_channels, dilation=rate))
         blocks.append(AsppPooling(in_channels, out_channels))
         self.blocks = nn.ModuleList(blocks)
         self.project = nn.Sequential(
-            NSC(out_channels * len(blocks), out_channels, 1))
+            CNS(out_channels * len(blocks), out_channels, 1))
 
     def forward(self, x):
         outputs = []
