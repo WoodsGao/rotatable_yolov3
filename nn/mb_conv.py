@@ -28,6 +28,8 @@ class MbConv(nn.Module):
                 groups=mid_channels),
             SELayer(mid_channels),
             CNS(mid_channels, out_channels, 1),
+            nn.Dropout(drop_rate)
+            if self.add and drop_rate > 0 else EmptyLayer(),
         )
 
     def forward(self, x):
