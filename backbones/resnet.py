@@ -1,5 +1,5 @@
 import torch.nn as nn
-from ..nn import Swish, ResBlock, CNS
+from ..nn import ResBlock
 
 
 class ResNet(nn.Module):
@@ -23,6 +23,8 @@ class ResNet(nn.Module):
         self.block2 = nn.Sequential(
             ResBlock(64, 128, stride=2),
             ResBlock(128, 128),
+            ResBlock(128, 128),
+            ResBlock(128, 128),
         )
         self.block3 = nn.Sequential(
             ResBlock(128, 256, stride=2),
@@ -39,11 +41,10 @@ class ResNet(nn.Module):
             ResBlock(512, 512),
             ResBlock(512, 512),
             ResBlock(512, 512),
-            ResBlock(512, 512),
-            ResBlock(512, 512),
         )
         self.block5 = nn.Sequential(
             ResBlock(512, 1024, stride=block5_stride),
+            ResBlock(1024, 1024),
             ResBlock(1024, 1024),
             ResBlock(1024, 1024),
         )
