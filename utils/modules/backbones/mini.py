@@ -1,5 +1,5 @@
 import torch.nn as nn
-from ..nn import DBL
+from ..nn import CNS
 
 
 class Mini(nn.Module):
@@ -15,11 +15,11 @@ class Mini(nn.Module):
         elif output_stride == 8:
             block4_stride = 1
             block5_stride = 1
-        self.block1 = DBL(3, 64, stride=2)
-        self.block2 = DBL(64, 128, stride=2)
-        self.block3 = DBL(128, 256, stride=2)
-        self.block4 = DBL(256, 512, stride=block4_stride)
-        self.block5 = DBL(512, 1024, stride=block5_stride)
+        self.block1 = CNS(3, 64, stride=2)
+        self.block2 = CNS(64, 128, stride=2)
+        self.block3 = CNS(128, 256, stride=2)
+        self.block4 = CNS(256, 512, stride=block4_stride)
+        self.block5 = CNS(512, 1024, stride=block5_stride)
 
     def forward(self, x):
         x = self.block1(x)

@@ -10,4 +10,4 @@ class CReLU(nn.Module):
 
 class Swish(nn.Module):
     def forward(self, x):
-        return x * x.sigmoid()
+        return x.mul_(x.sigmoid())

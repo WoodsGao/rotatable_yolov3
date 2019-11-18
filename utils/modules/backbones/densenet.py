@@ -1,5 +1,5 @@
 import torch.nn as nn
-from ..nn import Swish, DenseBlock, DBL
+from ..nn import Swish, DenseBlock, CNS
 
 
 class DenseNet(nn.Module):

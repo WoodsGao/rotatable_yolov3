@@ -1,14 +1,14 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from . import DBL, BLD
+from . import CNS, NSC, DropConnect
 
 
 class AsppPooling(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(AsppPooling, self).__init__()
         self.gap = nn.Sequential(nn.AdaptiveAvgPool2d(1),
-                                 BLD(in_channels, out_channels))
+                                 CNS(in_channels, out_channels))
 
     def forward(self, x):
         size = x.size()[2:]
@@ -21,13 +21,23 @@ class Aspp(nn.Module):
     def __init__(self, in_channels, out_channels, atrous_rates):
         super(Aspp, self).__init__()
         blocks = []
-        blocks.append(BLD(in_channels, out_channels, 1))
+        blocks.append(CNS(in_channels, out_channels, 1))
         for rate in atrous_rates:
-            blocks.append(BLD(in_channels, out_channels, dilation=rate))
-        blocks.append(AsppPooling(in_channels, out_channels))
+            blocks.append(
+                nn.Sequential(
+                    CNS(in_channels, out_channels, dilation=rate),
+                    DropConnect(0.2),
+                ))
+        blocks.append(
+            nn.Sequential(
+                AsppPooling(in_channels, out_channels),
+                DropConnect(0.2),
+            ))
         self.blocks = nn.ModuleList(blocks)
         self.project = nn.Sequential(
-            BLD(out_channels * len(blocks), out_channels, 1))
+            CNS(out_channels * len(blocks), out_channels, 1),
+            DropConnect(0.2),
+        )
 
     def forward(self, x):
         outputs = []
