@@ -16,6 +16,7 @@
 *.json
 
 tmp/
+output/
 
 *.cfg
 !cfg/yolov3*.cfg

@@ -16,9 +16,11 @@ def detect(save_txt=False, save_img=False):
     if os.path.exists(out):
         shutil.rmtree(out)  # delete output folder
     os.makedirs(out)  # make new output folder
+    out_txt = os.path.join(out, 'txt')
+    os.makedirs(out_txt)  # make new output folder
 
     # Initialize model
-    model = YOLOV3(1, (img_size, img_size))
+    model = YOLOV3(80, (img_size, img_size))
 
     # Load weights
     model.load_state_dict(torch.load(weights, map_location=device)['model'])
@@ -89,7 +91,8 @@ def detect(save_txt=False, save_img=False):
             else:
                 p, s, im0 = path, '', im0s
 
-            save_path = str(Path(out) / Path(p).name)
+            save_path = os.path.join(out_txt, os.path.basename(p))
+            print(save_path)
             s += '%gx%g ' % img.shape[2:]  # print string
             if det is not None and len(det):
                 # Rescale boxes from img_size to im0 size
@@ -102,9 +105,9 @@ def detect(save_txt=False, save_img=False):
 
                 # Write results
                 for *xyxy, conf, _, cls in det:
-                    if save_txt:  # Write to file
-                        with open(save_path + '.txt', 'a') as file:
-                            file.write(('%g ' * 6 + '\n') % (*xyxy, cls, conf))
+                    with open(os.path.join(out_txt, os.path.splitext(os.path.basename(p))[0]+'.txt'), 'a') as file:
+                        file.write(('%g ' * 6 + '\n') % (*xyxy, cls, conf))
+                    
 
                     if save_img or view_img:  # Add bbox to image
                         label = '%s %.2f' % (classes[int(cls)], conf)
@@ -119,7 +122,7 @@ def detect(save_txt=False, save_img=False):
             # Save results (image with detections)
             if save_img:
                 if dataset.mode == 'images':
-                    cv2.imwrite(save_path, im0)
+                    cv2.imwrite(os.path.join(out, os.path.basename(p)), im0)
                 else:
                     if vid_path != save_path:  # new video
                         vid_path = save_path
@@ -147,7 +150,7 @@ if __name__ == '__main__':
     parser.add_argument('--weights', type=str, default='weights/best_mAP.pt', help='path to weights file')
     parser.add_argument('--source', type=str, default='data/samples', help='source')  # input file/folder, 0 for webcam
     parser.add_argument('--output', type=str, default='output', help='output folder')  # output folder
-    parser.add_argument('--img-size', type=int, default=320, help='inference size (pixels)')
+    parser.add_argument('--img-size', type=int, default=416, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.5, help='object confidence threshold')
     parser.add_argument('--nms-thres', type=float, default=0.5, help='iou threshold for non-maximum suppression')
     parser.add_argument('--fourcc', type=str, default='mp4v', help='output video codec (verify ffmpeg support)')
