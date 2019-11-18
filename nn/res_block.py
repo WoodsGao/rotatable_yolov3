@@ -23,7 +23,11 @@ class ResBlock(nn.Module):
                 dilation=dilation,
                 groups=32 if out_channels % 64 == 0 else 1,
             ),
+<<<<<<< HEAD
             NSC(out_channels // 2, out_channels, 1),
+=======
+            BLD(out_channels // 2, out_channels, 1),
+>>>>>>> bc8e130fe6ef2df7289bb59fec042ccad7bec48d
         )
 
     def forward(self, x):
