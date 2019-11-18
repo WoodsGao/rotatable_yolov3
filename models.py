@@ -2,8 +2,8 @@ import torch.nn.functional as F
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from utils.modules.nn import BLD, DBL, Swish
-from utils.modules.backbones import DenseNet
+from utils.modules.nn import NSC, CNS, Swish
+from utils.modules.backbones import DenseNet, EfficientNetB2
 import math
 from utils.google_utils import *
 from utils.parse_config import *
@@ -99,11 +99,10 @@ class YOLOV3(nn.Module):
                           [[30, 61], [62, 45], [59, 119]],
                           [[116, 90], [156, 198], [373, 326]]]):
         super(YOLOV3, self).__init__()
-        self.backbone = DenseNet()
+        self.backbone = EfficientNetB2()
         self.high_final = nn.Sequential(
-            nn.GroupNorm(32, 1024),
-            Swish(),
-            nn.Conv2d(1024,
+            CNS(352, 256),
+            nn.Conv2d(256,
                       len(anchors[-1]) * (5 + num_classes), 1),
         )
         self.high_yolo = YOLOLayer(
@@ -113,11 +112,10 @@ class YOLOV3(nn.Module):
             yolo_index=0,  # 0, 1 or 2
         )  # yolo architecture
 
-        self.high2middle = BLD(1024, 512)
+        self.high2middle = CNS(352, 256)
         self.middle_final = nn.Sequential(
-            nn.GroupNorm(32, 1024),
-            Swish(),
-            nn.Conv2d(1024,
+            CNS(376, 192),
+            nn.Conv2d(192,
                       len(anchors[-2]) * (5 + num_classes), 1),
         )
         self.middle_yolo = YOLOLayer(
@@ -127,11 +125,10 @@ class YOLOV3(nn.Module):
             yolo_index=1,  # 0, 1 or 2
         )  # yolo architecture
 
-        self.middle2low = BLD(1024, 256)
+        self.middle2low = CNS(376, 128)
         self.low_final = nn.Sequential(
-            nn.GroupNorm(32, 512),
-            Swish(),
-            nn.Conv2d(512,
+            CNS(176, 128),
+            nn.Conv2d(128,
                       len(anchors[-3]) * (5 + num_classes), 1),
         )
         self.low_yolo = YOLOLayer(
@@ -212,3 +209,11 @@ def create_grids(self,
     self.ng = torch.Tensor(ng).to(device)
     self.nx = nx
     self.ny = ny
+
+
+if __name__ == '__main__':
+    model = YOLOV3(80)
+    a=torch.rand([4, 3, 416, 416])
+    b = model(a)
+    print(b[0].shape)
+    b[0].mean().backward()
