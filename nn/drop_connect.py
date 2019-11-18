@@ -14,5 +14,5 @@ class DropConnect(nn.Module):
         random_tensor = (1 - self.drop_rate) + torch.rand(
             [x.size(0), 1, 1, 1], dtype=x.dtype, device=x.device)
         binary_tensor = torch.floor(random_tensor)
-        x = x / (1 - self.drop_rate) * binary_tensor
+        x.mul_(binary_tensor / (1 - self.drop_rate))
         return x

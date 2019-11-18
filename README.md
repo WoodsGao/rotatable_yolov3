@@ -6,7 +6,7 @@ A neural network toolkit built on pytorch/opencv/numpy that includes neural netw
 
 ## Features
 
- - Advanced neural network modules, such as ResNet, SENet, Xception, DenseNet, FocalLoss, AdaboundW
+ - Advanced neural network modules, such as EfficientNet, ResNet, SENet, Xception, DenseNet, FocalLoss, AdaboundW
  - Ultra-efficient dataloader that allows you to take full advantage of GPU
  - High performance and multifunctional data augmentation(See [woodsgao/image_augments](https://github.com/woodsgao/image_augments))
 
@@ -45,7 +45,7 @@ See [woodsgao/image_augments](https://github.com/woodsgao/image_augments) for mo
 
 ### pytorch_modules.backbones
 
-This module includes a series of modified backbone networks, such as ResNet, SENet, Xception, DenseNet.
+This module includes a series of modified backbone networks, such as EfficientNet, ResNet, SENet, Xception, DenseNet.
 
     import torch
     from pytorch_modules.backbones import ResNet
