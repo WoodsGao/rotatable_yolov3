@@ -12,7 +12,7 @@ class DropConnect(nn.Module):
         if not self.training:
             return x
         random_tensor = (1 - self.drop_rate) + torch.rand(
-            [x.size(0)], dtype=x.dtype, device=x.device)
+            [x.size(0), 1, 1, 1], dtype=x.dtype, device=x.device)
         binary_tensor = torch.floor(random_tensor)
         x = x / (1 - self.drop_rate) * binary_tensor
         return x
