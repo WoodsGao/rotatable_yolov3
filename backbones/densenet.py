@@ -1,8 +1,9 @@
 import torch.nn as nn
+from . import BasicModel
 from ..nn import Swish, DenseBlock, CNS
 
 
-class DenseNet(nn.Module):
+class DenseNet(BasicModel):
     def __init__(self, output_stride=32):
         super(DenseNet, self).__init__()
         assert output_stride in [8, 16, 32]
@@ -47,11 +48,3 @@ class DenseNet(nn.Module):
             DenseBlock(1024, 1024),
             DenseBlock(1024, 1024),
         )
-
-    def forward(self, x):
-        x = self.block1(x)
-        x = self.block2(x)
-        x = self.block3(x)
-        x = self.block4(x)
-        x = self.block5(x)
-        return x

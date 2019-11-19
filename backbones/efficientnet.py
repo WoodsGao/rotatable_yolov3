@@ -1,10 +1,9 @@
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
+from . import BasicModel
 from ..nn import MbConv, CNS
 
 
-class EfficientNetB7(nn.Module):
+class EfficientNetB7(BasicModel):
     def __init__(self, output_stride=32):
         super(EfficientNetB7, self).__init__()
         assert output_stride in [8, 16, 32]
@@ -148,16 +147,8 @@ class EfficientNetB4(nn.Module):
             MbConv(448, 448, 3),
         )
 
-    def forward(self, x):
-        x = self.block1(x)
-        x = self.block2(x)
-        x = self.block3(x)
-        x = self.block4(x)
-        x = self.block5(x)
-        return x
 
-
-class EfficientNetB2(nn.Module):
+class EfficientNetB2(BasicModel):
     def __init__(self, output_stride=32):
         super(EfficientNetB2, self).__init__()
         assert output_stride in [8, 16, 32]
@@ -204,11 +195,3 @@ class EfficientNetB2(nn.Module):
             MbConv(208, 352, 3),
             MbConv(352, 352, 3),
         )
-
-    def forward(self, x):
-        x = self.block1(x)
-        x = self.block2(x)
-        x = self.block3(x)
-        x = self.block4(x)
-        x = self.block5(x)
-        return x

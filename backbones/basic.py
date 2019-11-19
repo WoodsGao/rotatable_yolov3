@@ -23,6 +23,7 @@ class BasicModel(nn.Module):
         self.block4 = CNS(256, 512, stride=block4_stride)
         self.block5 = CNS(512, 1024, stride=block5_stride)
         self.init()
+        self.weight_standard()
 
     def init(self):
         for m in self.modules():
@@ -43,11 +44,12 @@ class BasicModel(nn.Module):
                         weight_mean = weight_mean.mean(dim=2, keepdim=True)
                         weight_mean = weight_mean.mean(dim=3, keepdim=True)
                         weight = weight - weight_mean
-                        std = torch.sqrt(
-                            torch.var(weight.view(weight.size(0), -1),
-                                      dim=1,
-                                      unbiased=False) + 1e-8).view(
-                                          -1, 1, 1, 1)
+
+                        var = torch.var(weight.view(weight.size(0), -1),
+                                        dim=1,
+                                        unbiased=False)
+                        var[var == 0] = 1
+                        std = torch.sqrt(var).view(-1, 1, 1, 1)
                         cm.weight.data = weight / std.expand_as(weight)
 
     def forward(self, x):
