@@ -9,21 +9,6 @@ class EmptyLayer(nn.Module):
         return x
 
 
-class WSConv2d(nn.Conv2d):
-    def forward(self, x):
-        weight = self.weight
-        weight_mean = weight.mean(dim=1, keepdim=True)
-        weight_mean = weight_mean.mean(dim=2, keepdim=True)
-        weight_mean = weight_mean.mean(dim=3, keepdim=True)
-        weight = weight - weight_mean
-        std = torch.sqrt(
-            torch.var(weight.view(weight.size(0), -1), dim=1, unbiased=False) +
-            1e-12).view(-1, 1, 1, 1)
-        weight = weight / std.expand_as(weight)
-        return F.conv2d(x, weight, self.bias, self.stride, self.padding,
-                        self.dilation, self.groups)
-
-
 # norm-swish-conv
 class NSC(nn.Module):
     def __init__(self,
@@ -64,15 +49,7 @@ class CNS(nn.Module):
                  dilation=1):
         super(CNS, self).__init__()
         self.block = nn.Sequential(
-            WSConv2d(
-                in_channels,
-                out_channels,
-                ksize,
-                stride=stride,
-                padding=(ksize - 1) // 2 - 1 + dilation,
-                groups=groups,
-                dilation=dilation,
-            ) if groups == 1 else nn.Conv2d(
+            nn.Conv2d(
                 in_channels,
                 out_channels,
                 ksize,
@@ -81,7 +58,9 @@ class CNS(nn.Module):
                 groups=groups,
                 dilation=dilation,
             ),
-            nn.GroupNorm(32, out_channels) if out_channels % 32 == 0 else nn.GroupNorm(8, out_channels) if out_channels % 8 == 0 else EmptyLayer(),
+            nn.GroupNorm(32, out_channels) if out_channels %
+            32 == 0 else nn.GroupNorm(8, out_channels) if out_channels %
+            8 == 0 else EmptyLayer(),
             Swish(),
         )
 
