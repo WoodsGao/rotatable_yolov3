@@ -111,7 +111,7 @@ def train(lr=1e-3):
         best_mAP = state_dict['mAP']
         best_loss = state_dict['loss']
         epoch = state_dict['epoch']
-        model.load_state_dict(state_dict['model'], strict=True)
+        model.load_state_dict(state_dict['model'], strict=False)
     # Scheduler https://github.com/ultralytics/yolov3/issues/238
     # lf = lambda x: 1 - x / epochs  # linear ramp to zero
     # lf = lambda x: 10 ** (hyp['lrf'] * x / epochs)  # exp ramp

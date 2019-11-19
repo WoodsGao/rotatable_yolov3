@@ -343,7 +343,6 @@ def compute_loss(p, targets, model):  # predictions, targets, model
 
     # Compute losses
     for i, pi in enumerate(p):  # layer index, layer predictions
-        print(pi.shape)
         b, a, gj, gi = indices[i]  # image, anchor, gridy, gridx
         tobj = torch.zeros_like(pi[..., 0])  # target obj
 
