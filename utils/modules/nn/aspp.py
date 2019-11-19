@@ -23,21 +23,10 @@ class Aspp(nn.Module):
         blocks = []
         blocks.append(CNS(in_channels, out_channels, 1))
         for rate in atrous_rates:
-            blocks.append(
-                nn.Sequential(
-                    CNS(in_channels, out_channels, dilation=rate),
-                    DropConnect(0.2),
-                ))
-        blocks.append(
-            nn.Sequential(
-                AsppPooling(in_channels, out_channels),
-                DropConnect(0.2),
-            ))
+            blocks.append(CNS(in_channels, out_channels, dilation=rate))
+        blocks.append(AsppPooling(in_channels, out_channels))
         self.blocks = nn.ModuleList(blocks)
-        self.project = nn.Sequential(
-            CNS(out_channels * len(blocks), out_channels, 1),
-            DropConnect(0.2),
-        )
+        self.project = CNS(out_channels * len(blocks), out_channels, 1)
 
     def forward(self, x):
         outputs = []
