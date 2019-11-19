@@ -81,8 +81,7 @@ class CNS(nn.Module):
                 groups=groups,
                 dilation=dilation,
             ),
-            nn.BatchNorm2d(out_channels) if out_channels % 32 != 0 or groups > 1 else
-            nn.GroupNorm(32, out_channels),
+            nn.GroupNorm(32, out_channels) if out_channels % 32 == 0 else nn.GroupNorm(8, out_channels) if out_channels % 8 == 0 else EmptyLayer(),
             Swish(),
         )
 
