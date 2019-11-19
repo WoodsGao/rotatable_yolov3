@@ -13,7 +13,7 @@ from utils.modules.optims import AdaBoundW
 from utils.modules.datasets import DetectionDataset
 from torch.utils.data import DataLoader
 
-mixed_precision = True
+mixed_precision = False
 try:  # Mixed precision training https://github.com/NVIDIA/apex
     from apex import amp
 except:
@@ -91,7 +91,7 @@ def train(lr=1e-3):
     model = YOLOV3(80).to(device)
 
     if opt.adam:
-        optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=5e-4)
+        optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=5e-4)
     else:
         optimizer = optim.SGD(
             model.parameters(),
@@ -102,6 +102,7 @@ def train(lr=1e-3):
     epoch = 0
     best_mAP = 0
     best_loss = 1000
+    accumulate_count = 0
     if opt.resume:
         state_dict = torch.load(weights, map_location=device)
         if opt.adam:
@@ -243,7 +244,7 @@ def train(lr=1e-3):
                     scaled_loss.backward()
             else:
                 loss.backward()
-
+            accumulate_count += 1
             # Print batch results
             total_loss += loss_items
             mloss = total_loss / batch_idx  # update mean losses
@@ -253,8 +254,8 @@ def train(lr=1e-3):
                                                '%.3gG' % mem, *mloss,
                                                len(targets), img_size)
             pbar.set_description(s)
-            if batch_idx % accumulate == 0 or \
-                    batch_idx == len(train_loader):
+            if accumulate_count % accumulate == 0:
+                accumulate_count = 0
                 optimizer.step()
                 optimizer.zero_grad()
 
