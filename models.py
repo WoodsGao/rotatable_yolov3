@@ -2,7 +2,7 @@ import torch.nn.functional as F
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from utils.modules.nn import NSC, CNS, Swish
+from utils.modules.nn import CNS, Swish
 from utils.modules.backbones import DenseNet, EfficientNetB2
 import math
 from utils.google_utils import *
