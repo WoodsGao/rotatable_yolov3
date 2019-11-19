@@ -47,8 +47,7 @@ class BasicModel(nn.Module):
 
                         var = torch.var(weight.view(weight.size(0), -1),
                                         dim=1,
-                                        unbiased=False)
-                        var[var == 0] = 1
+                                        unbiased=False).clamp(min=1e-3)
                         std = torch.sqrt(var).view(-1, 1, 1, 1)
                         cm.weight.data = weight / std.expand_as(weight)
 
