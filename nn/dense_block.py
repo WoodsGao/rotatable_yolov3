@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from . import NSC, EmptyLayer
+from . import CNS, EmptyLayer
 
 
 class CutLayer(nn.Module):
@@ -29,8 +29,8 @@ class DenseBlock(nn.Module):
         else:
             self.downsample = nn.Conv2d(in_channels, out_channels, 3, stride, 1)
         self.block = nn.Sequential(
-            NSC(in_channels, out_channels // 2, 1),
-            NSC(
+            CNS(in_channels, out_channels // 2, 1),
+            CNS(
                 out_channels // 2,
                 out_channels,
                 stride=stride,
