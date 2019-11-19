@@ -1,8 +1,9 @@
 import torch.nn as nn
+from . import BasicModel
 from ..nn import CNS, Swish, XBlock, SeparableConv2d
 
 
-class Xception(nn.Module):
+class Xception(BasicModel):
     def __init__(self, output_stride=32):
         super(Xception, self).__init__()
         assert output_stride in [8, 16, 32]
@@ -90,11 +91,3 @@ class Xception(nn.Module):
             nn.BatchNorm2d(2048),
             Swish(),
         )
-
-    def forward(self, x):
-        x = self.block1(x)
-        x = self.block2(x)
-        x = self.block3(x)
-        x = self.block4(x)
-        x = self.block5(x)
-        return x

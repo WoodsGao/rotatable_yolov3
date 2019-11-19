@@ -1,5 +1,5 @@
 import torch.nn as nn
-from . import NSC, EmptyLayer
+from . import CNS, EmptyLayer
 
 
 class ResBlock(nn.Module):
@@ -11,20 +11,24 @@ class ResBlock(nn.Module):
                  se_block=False):
         super(ResBlock, self).__init__()
         if stride == 1 and in_channels == out_channels:
-            self.downsample = EmptyLayer()
+            self.add = True
         else:
-            self.downsample = NSC(in_channels, out_channels, stride=stride)
+            self.add = False
         self.block = nn.Sequential(
-            NSC(in_channels, out_channels // 2, 1),
-            NSC(
+            CNS(in_channels, out_channels // 2, 1),
+            CNS(
                 out_channels // 2,
                 out_channels // 2,
-                stride=stride, 
+                stride=stride,
                 dilation=dilation,
                 groups=32 if out_channels % 64 == 0 else 1,
             ),
-            NSC(out_channels // 2, out_channels, 1),
+            CNS(out_channels // 2, out_channels, 1),
         )
 
     def forward(self, x):
-        return self.downsample(x) + self.block(x)
+        identity = x
+        x = self.block(x)
+        if self.add:
+            x = x + identity
+        return x
