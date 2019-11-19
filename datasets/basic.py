@@ -54,18 +54,18 @@ class BasicDataset(torch.utils.data.Dataset):
             i for i in range(len(self.data))
             if txn.get(i.to_bytes(10, 'little')) is None
         ]
-        pool = ThreadPoolExecutor()
         batch_size = 64
-        for ki in tqdm(range(0, len(missed_keys), batch_size)):
-            items = list(
-                pool.map(self.get_item, missed_keys[ki:ki + batch_size]))
-            items = list(
-                pool.map(pickle.dumps,
-                         [[item, self.checks[key]]
-                          for item, key in zip(items, missed_keys[ki:ki + batch_size])]))
-            for item, key in zip(items, missed_keys[ki:ki + batch_size]):
-                txn.put(key.to_bytes(10, 'little'), value=item)
-            # break
+        with ThreadPoolExecutor() as pool:
+            for ki in tqdm(range(0, len(missed_keys), batch_size)):
+                items = list(
+                    pool.map(self.get_item, missed_keys[ki:ki + batch_size]))
+                items = list(
+                    pool.map(pickle.dumps,
+                            [[item, self.checks[key]]
+                            for item, key in zip(items, missed_keys[ki:ki + batch_size])]))
+                for item, key in zip(items, missed_keys[ki:ki + batch_size]):
+                    txn.put(key.to_bytes(10, 'little'), value=item)
+                # break
         txn.commit()
         db.close()
 
