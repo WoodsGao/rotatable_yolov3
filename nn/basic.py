@@ -28,6 +28,7 @@ class CNS(nn.Module):
                 padding=(ksize - 1) // 2 - 1 + dilation,
                 groups=groups,
                 dilation=dilation,
+                bias=False
             ),
             nn.BatchNorm2d(out_channels),
             Swish(),

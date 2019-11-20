@@ -27,7 +27,8 @@ class MbConv(nn.Module):
                 stride=stride,
                 groups=mid_channels),
             SELayer(mid_channels),
-            CNS(mid_channels, out_channels, 1),
+            nn.Conv2d(mid_channels, out_channels, 1, bias=False),
+            nn.BatchNorm2d(out_channels),
             # DropConnect(drop_rate)
             nn.Dropout(drop_rate)
             if self.add and drop_rate > 0 else EmptyLayer(),

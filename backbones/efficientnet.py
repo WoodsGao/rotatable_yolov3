@@ -19,7 +19,7 @@ class EfficientNetB7(BasicModel):
         self.block1 = nn.Sequential(
             CNS(3, 64, stride=2),
             MbConv(64, 32, expand_ratio=1),
-            MbConv(32, 32, expand_ratio=2),
+            MbConv(32, 32, expand_ratio=1),
         )
         self.block2 = nn.Sequential(
             MbConv(32, 48, stride=2),
@@ -106,7 +106,7 @@ class EfficientNetB4(nn.Module):
         self.block1 = nn.Sequential(
             CNS(3, 48, stride=2),
             MbConv(48, 24, expand_ratio=1),
-            MbConv(24, 24, expand_ratio=2),
+            MbConv(24, 24, expand_ratio=1),
         )
         self.block2 = nn.Sequential(
             MbConv(24, 32, stride=2),
@@ -164,7 +164,7 @@ class EfficientNetB2(BasicModel):
         self.block1 = nn.Sequential(
             CNS(3, 32, stride=2),
             MbConv(32, 16, expand_ratio=1),
-            MbConv(16, 16, expand_ratio=2),
+            MbConv(16, 16, expand_ratio=1),
         )
         self.block2 = nn.Sequential(
             MbConv(16, 24, stride=2),
