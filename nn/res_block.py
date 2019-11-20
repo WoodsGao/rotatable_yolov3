@@ -1,5 +1,5 @@
 import torch.nn as nn
-from . import CNS, EmptyLayer
+from . import CNS, EmptyLayer, SELayer
 
 
 class ResBlock(nn.Module):
