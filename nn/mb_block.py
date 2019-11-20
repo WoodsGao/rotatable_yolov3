@@ -59,7 +59,7 @@ class MbConv(nn.Module):
 
     def forward(self, x):
         if self.add:
-            if random() < self.drop_rate:
+            if self.training and random() < self.drop_rate:
                 return x
             else:
                 identity = x
