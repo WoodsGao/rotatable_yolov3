@@ -76,10 +76,10 @@ def train(lr=1e-3):
     multi_scale = opt.multi_scale
 
     if multi_scale:
-        img_sz_min = round(img_size / 32 / 1.5) + 1
-        img_sz_max = round(img_size / 32 * 1.5) - 1
-        img_size = img_sz_max * 32  # initiate with maximum multi_scale size
-        print('Using multi-scale %g - %g' % (img_sz_min * 32, img_size))
+        img_size_min = round(img_size / 32 / 1.5) + 1
+        img_size_max = round(img_size / 32 * 1.5) - 1
+        img_size = img_size_max * 32  # initiate with maximum multi_scale size
+        print('Using multi-scale %g - %g' % (img_size_min * 32, img_size))
 
     # Configure run
     data_dict = parse_data_cfg(data)
@@ -91,14 +91,15 @@ def train(lr=1e-3):
     model = YOLOV3(80).to(device)
 
     if opt.adam:
-        optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=5e-4)
+        optimizer = optim.Adam(model.parameters(),
+                               lr=lr if lr > 0 else 1e-4,
+                               weight_decay=1e-8)
     else:
-        optimizer = optim.SGD(
-            model.parameters(),
-            lr=lr,
-            momentum=0.9,
-            weight_decay=5e-4,
-            nesterov=True)
+        optimizer = optim.SGD(model.parameters(),
+                              lr=lr if lr > 0 else 1e-3,
+                              momentum=0.9,
+                              weight_decay=1e-8,
+                              nesterov=True)
     epoch = 0
     best_mAP = 0
     best_loss = 1000
@@ -108,6 +109,12 @@ def train(lr=1e-3):
         if opt.adam:
             if 'adam' in state_dict:
                 optimizer.load_state_dict(state_dict['adam'])
+        else:
+            if 'sgd' in state_dict:
+                optimizer.load_state_dict(state_dict['sgd'])
+        if lr > 0:
+            for pg in optimizer.param_groups:
+                pg['lr'] = lr
         best_mAP = state_dict['mAP']
         best_loss = state_dict['loss']
         epoch = state_dict['epoch']
@@ -160,7 +167,8 @@ def train(lr=1e-3):
 
     train_loader = DataLoader(train_data,
                               batch_size=batch_size,
-                              num_workers=min([os.cpu_count(), batch_size, 16]),
+                              num_workers=min([os.cpu_count(), batch_size,
+                                               16]),
                               shuffle=True,
                               pin_memory=True,
                               collate_fn=train_data.collate_fn)
@@ -172,7 +180,8 @@ def train(lr=1e-3):
 
         val_loader = DataLoader(val_data,
                                 batch_size=batch_size,
-                                num_workers=min([os.cpu_count(), batch_size, 16]),
+                                num_workers=min(
+                                    [os.cpu_count(), batch_size, 16]),
                                 shuffle=True,
                                 pin_memory=True,
                                 collate_fn=val_data.collate_fn)
@@ -216,6 +225,8 @@ def train(lr=1e-3):
             #     show_batch('train_batch.png', inputs, targets, classes)
             inputs = inputs.to(device)
             targets = targets.to(device)
+            if multi_scale:
+                img_size = random.randrange(img_size_min, img_size_max) * 32
             if multi_scale and (inputs.size(3) != img_size):
                 inputs = F.interpolate(inputs,
                                        size=img_size,
@@ -229,10 +240,12 @@ def train(lr=1e-3):
             loss, loss_items = compute_loss(pred, targets, model)
 
             if not torch.isfinite(loss):
-                print('WARNING: non-finite loss, continue training ', loss_items)
+                print('WARNING: non-finite loss, continue training ',
+                      loss_items)
                 continue
             if loss <= 0:
-                print('WARNING: non-positive loss, continue training ', loss_items)
+                print('WARNING: non-positive loss, continue training ',
+                      loss_items)
                 continue
 
             # Scale loss by nominal batch_size of 64
@@ -256,13 +269,10 @@ def train(lr=1e-3):
             pbar.set_description(s)
             if accumulate_count % accumulate == 0:
                 accumulate_count = 0
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 10)
                 optimizer.step()
                 optimizer.zero_grad()
-
-                # multi scale
-                if multi_scale:
-                    img_size = random.randrange(img_size_min,
-                                                img_size_max) * 32
+                model.weight_standard()
             # end batch ------------------------------------------------------------------------------------------------
 
         # Calculate mAP (always test final epoch, skip first 10 if opt.nosave)
@@ -292,6 +302,8 @@ def train(lr=1e-3):
         val_loss = sum(results[4:])  # total loss
         mAP = results[2]
         epoch += 1
+        for pg in optimizer.param_groups:
+            pg['lr'] *= (1 - 1e-8)
         # Save checkpoint.
         state_dict = {
             'model': model.state_dict(),

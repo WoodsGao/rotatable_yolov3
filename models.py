@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from utils.modules.nn import CNS, Swish
-from utils.modules.backbones import DenseNet, EfficientNetB2
+from utils.modules.backbones import BasicModel, DenseNet, EfficientNetB2, EfficientNetB4
 import math
 from utils.google_utils import *
 from utils.parse_config import *
@@ -89,7 +89,7 @@ class YOLOLayer(nn.Module):
             return io.view(bs, -1, 5 + self.nc), p
 
 
-class YOLOV3(nn.Module):
+class YOLOV3(BasicModel):
     # YOLOv3 object detection model
 
     def __init__(self,
@@ -99,9 +99,9 @@ class YOLOV3(nn.Module):
                           [[30, 61], [62, 45], [59, 119]],
                           [[116, 90], [156, 198], [373, 326]]]):
         super(YOLOV3, self).__init__()
-        self.backbone = EfficientNetB2()
+        self.backbone = EfficientNetB4()
         self.high_final = nn.Sequential(
-            CNS(352, 256),
+            CNS(448, 256),
             nn.Conv2d(256,
                       len(anchors[-1]) * (5 + num_classes), 1),
         )
@@ -112,9 +112,9 @@ class YOLOV3(nn.Module):
             yolo_index=0,  # 0, 1 or 2
         )  # yolo architecture
 
-        self.high2middle = CNS(352, 256)
+        self.high2middle = CNS(448, 256)
         self.middle_final = nn.Sequential(
-            CNS(376, 192),
+            CNS(256 + 160, 192),
             nn.Conv2d(192,
                       len(anchors[-2]) * (5 + num_classes), 1),
         )
@@ -125,9 +125,9 @@ class YOLOV3(nn.Module):
             yolo_index=1,  # 0, 1 or 2
         )  # yolo architecture
 
-        self.middle2low = CNS(376, 128)
+        self.middle2low = CNS(256 + 160, 128)
         self.low_final = nn.Sequential(
-            CNS(176, 128),
+            CNS(128 + 56, 128),
             nn.Conv2d(128,
                       len(anchors[-3]) * (5 + num_classes), 1),
         )
@@ -140,6 +140,8 @@ class YOLOV3(nn.Module):
 
         self.yolo_layers = nn.ModuleList(
             [self.high_yolo, self.middle_yolo, self.low_yolo])
+        self.init()
+        self.weight_standard()
 
     def forward(self, x, var=None):
         img_size = x.shape[-2:]
