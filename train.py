@@ -93,12 +93,12 @@ def train(lr=1e-3):
     if opt.adam:
         optimizer = optim.Adam(model.parameters(),
                                lr=lr if lr > 0 else 1e-4,
-                               weight_decay=1e-8)
+                               weight_decay=1e-5)
     else:
         optimizer = optim.SGD(model.parameters(),
                               lr=lr if lr > 0 else 1e-3,
                               momentum=0.9,
-                              weight_decay=1e-8,
+                              weight_decay=1e-5,
                               nesterov=True)
     epoch = 0
     best_mAP = 0
@@ -272,7 +272,6 @@ def train(lr=1e-3):
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 10)
                 optimizer.step()
                 optimizer.zero_grad()
-                model.weight_standard()
             # end batch ------------------------------------------------------------------------------------------------
 
         # Calculate mAP (always test final epoch, skip first 10 if opt.nosave)

@@ -141,7 +141,6 @@ class YOLOV3(BasicModel):
         self.yolo_layers = nn.ModuleList(
             [self.high_yolo, self.middle_yolo, self.low_yolo])
         self.init()
-        self.weight_standard()
 
     def forward(self, x, var=None):
         img_size = x.shape[-2:]
