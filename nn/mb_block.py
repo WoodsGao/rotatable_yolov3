@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from . import Swish, CNS, SELayer, EmptyLayer
+from torchvision.models import resnet101
 
 
 class MbBlock(nn.Module):
@@ -15,6 +16,7 @@ class MbBlock(nn.Module):
                  drop_rate=0.2,
                  reps=1):
         super(MbBlock, self).__init__()
+        self.drop_rate = drop_rate
         blocks = [
             MbConv(in_channels, out_channels, ksize, stride, expand_ratio,
                    drop_rate)
@@ -23,10 +25,14 @@ class MbBlock(nn.Module):
             blocks.append(
                 MbConv(out_channels, out_channels, ksize, 1, expand_ratio,
                        drop_rate))
-        self.block = nn.Sequential(*blocks)
+        self.blocks = nn.ModuleList(blocks)
 
     def forward(self, x):
-        return self.block(x)
+        for bi, block in enumerate(self.blocks):
+            if bi > 0 and self.training and random() < self.drop_rate:
+                continue
+            x = block(x)
+        return x
 
 
 class MbConv(nn.Module):
@@ -43,7 +49,6 @@ class MbConv(nn.Module):
             self.add = True
         else:
             self.add = False
-        self.drop_rate = drop_rate
         self.block = nn.Sequential(
             CNS(in_channels, mid_channels, 1)
             if expand_ratio > 1 else EmptyLayer(),
@@ -58,12 +63,7 @@ class MbConv(nn.Module):
         )
 
     def forward(self, x):
+        f = self.block(x)
         if self.add:
-            if self.training and random() < self.drop_rate:
-                return x
-            else:
-                identity = x
-        x = self.block(x)
-        if self.add:
-            x = x + identity
-        return x
+            f += x
+        return f
