@@ -1,6 +1,6 @@
 import torch.nn as nn
 from . import BasicModel
-from ..nn import MbConv, CNS
+from ..nn import MbBlock, CNS
 
 
 class EfficientNetB7(BasicModel):
@@ -18,67 +18,17 @@ class EfficientNetB7(BasicModel):
             block5_stride = 1
         self.block1 = nn.Sequential(
             CNS(3, 64, stride=2),
-            MbConv(64, 32, expand_ratio=1),
-            MbConv(32, 32, expand_ratio=1),
+            MbBlock(64, 32, expand_ratio=1, reps=2),
         )
-        self.block2 = nn.Sequential(
-            MbConv(32, 48, stride=2),
-            MbConv(48, 48),
-            MbConv(48, 48),
-            MbConv(48, 48),
-            MbConv(48, 48),
-            MbConv(48, 48),
-            MbConv(48, 48),
-        )
-        self.block3 = nn.Sequential(
-            MbConv(48, 80, 5, stride=2),
-            MbConv(80, 80, 5),
-            MbConv(80, 80, 5),
-            MbConv(80, 80, 5),
-            MbConv(80, 80, 5),
-            MbConv(80, 80, 5),
-            MbConv(80, 80, 5),
-        )
+        self.block2 = nn.Sequential(MbBlock(32, 48, stride=2, reps=7), )
+        self.block3 = nn.Sequential(MbBlock(48, 80, 5, stride=2, reps=7), )
         self.block4 = nn.Sequential(
-            MbConv(80, 160, 5, stride=block4_stride),
-            MbConv(160, 160, 5),
-            MbConv(160, 160, 5),
-            MbConv(160, 160, 5),
-            MbConv(160, 160, 5),
-            MbConv(160, 160, 5),
-            MbConv(160, 160, 5),
-            MbConv(160, 160, 5),
-            MbConv(160, 160, 5),
-            MbConv(160, 160, 5),
-            MbConv(160, 224, 5),
-            MbConv(224, 224, 5),
-            MbConv(224, 224, 5),
-            MbConv(224, 224, 5),
-            MbConv(224, 224, 5),
-            MbConv(224, 224, 5),
-            MbConv(224, 224, 5),
-            MbConv(224, 224, 5),
-            MbConv(224, 224, 5),
-            MbConv(224, 224, 5),
+            MbBlock(80, 160, 5, stride=block4_stride, reps=10),
+            MbBlock(160, 224, 5, reps=10),
         )
         self.block5 = nn.Sequential(
-            MbConv(224, 384, 5, stride=block5_stride),
-            MbConv(384, 384, 5),
-            MbConv(384, 384, 5),
-            MbConv(384, 384, 5),
-            MbConv(384, 384, 5),
-            MbConv(384, 384, 5),
-            MbConv(384, 384, 5),
-            MbConv(384, 384, 5),
-            MbConv(384, 384, 5),
-            MbConv(384, 384, 5),
-            MbConv(384, 384, 5),
-            MbConv(384, 384, 5),
-            MbConv(384, 384, 5),
-            MbConv(384, 640, 3),
-            MbConv(640, 640, 3),
-            MbConv(640, 640, 3),
-            MbConv(640, 640, 3),
+            MbBlock(224, 384, 5, stride=block5_stride, reps=13),
+            MbBlock(384, 640, 3, reps=4),
         )
 
     def forward(self, x):
@@ -105,46 +55,17 @@ class EfficientNetB4(nn.Module):
             block5_stride = 1
         self.block1 = nn.Sequential(
             CNS(3, 48, stride=2),
-            MbConv(48, 24, expand_ratio=1),
-            MbConv(24, 24, expand_ratio=1),
+            MbBlock(48, 24, expand_ratio=1, reps=2),
         )
-        self.block2 = nn.Sequential(
-            MbConv(24, 32, stride=2),
-            MbConv(32, 32),
-            MbConv(32, 32),
-            MbConv(32, 32),
-        )
-        self.block3 = nn.Sequential(
-            MbConv(32, 56, 5, stride=2),
-            MbConv(56, 56, 5),
-            MbConv(56, 56, 5),
-            MbConv(56, 56, 5),
-        )
+        self.block2 = nn.Sequential(MbBlock(24, 32, stride=2, reps=4), )
+        self.block3 = nn.Sequential(MbBlock(32, 56, 5, stride=2, reps=4), )
         self.block4 = nn.Sequential(
-            MbConv(56, 112, stride=block4_stride),
-            MbConv(112, 112),
-            MbConv(112, 112),
-            MbConv(112, 112),
-            MbConv(112, 112),
-            MbConv(112, 112),
-            MbConv(112, 160, 5),
-            MbConv(160, 160, 5),
-            MbConv(160, 160, 5),
-            MbConv(160, 160, 5),
-            MbConv(160, 160, 5),
-            MbConv(160, 160, 5),
+            MbBlock(56, 112, stride=block4_stride, reps=6),
+            MbBlock(112, 160, 5, reps=6),
         )
         self.block5 = nn.Sequential(
-            MbConv(160, 272, 5, stride=block5_stride),
-            MbConv(272, 272, 5),
-            MbConv(272, 272, 5),
-            MbConv(272, 272, 5),
-            MbConv(272, 272, 5),
-            MbConv(272, 272, 5),
-            MbConv(272, 272, 5),
-            MbConv(272, 272, 5),
-            MbConv(272, 448, 3),
-            MbConv(448, 448, 3),
+            MbBlock(160, 272, 5, stride=block5_stride, reps=8),
+            MbBlock(272, 448, 3, reps=2),
         )
 
 
@@ -163,35 +84,15 @@ class EfficientNetB2(BasicModel):
             block5_stride = 1
         self.block1 = nn.Sequential(
             CNS(3, 32, stride=2),
-            MbConv(32, 16, expand_ratio=1),
-            MbConv(16, 16, expand_ratio=1),
+            MbBlock(32, 16, expand_ratio=1, reps=2),
         )
-        self.block2 = nn.Sequential(
-            MbConv(16, 24, stride=2),
-            MbConv(24, 24),
-            MbConv(24, 24),
-        )
-        self.block3 = nn.Sequential(
-            MbConv(24, 48, 5, stride=2),
-            MbConv(48, 48, 5),
-            MbConv(48, 48, 5),
-        )
+        self.block2 = nn.Sequential(MbBlock(16, 24, stride=2, reps=3), )
+        self.block3 = nn.Sequential(MbBlock(24, 48, 5, stride=2, reps=3), )
         self.block4 = nn.Sequential(
-            MbConv(48, 88, stride=block4_stride),
-            MbConv(88, 88),
-            MbConv(88, 88),
-            MbConv(88, 88),
-            MbConv(88, 120, 5),
-            MbConv(120, 120, 5),
-            MbConv(120, 120, 5),
-            MbConv(120, 120, 5),
+            MbBlock(48, 88, stride=block4_stride, reps=4),
+            MbBlock(88, 120, 5, reps=4),
         )
         self.block5 = nn.Sequential(
-            MbConv(120, 208, 5, stride=block5_stride),
-            MbConv(208, 208, 5),
-            MbConv(208, 208, 5),
-            MbConv(208, 208, 5),
-            MbConv(208, 208, 5),
-            MbConv(208, 352, 3),
-            MbConv(352, 352, 3),
+            MbBlock(120, 208, 5, stride=block5_stride, reps=4),
+            MbBlock(208, 352, 3, reps=1),
         )

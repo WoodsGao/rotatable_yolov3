@@ -4,6 +4,30 @@ import torch.nn.functional as F
 from . import Swish, CNS, SELayer, EmptyLayer, DropConnect
 
 
+class MbBlock(nn.Module):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 ksize=3,
+                 stride=1,
+                 expand_ratio=6,
+                 drop_rate=0.2,
+                 reps=1):
+        super(MbBlock, self).__init__()
+        blocks = [
+            MbConv(in_channels, out_channels, ksize, stride, expand_ratio,
+                   drop_rate)
+        ]
+        for i in range(reps - 1):
+            blocks.append(
+                MbConv(out_channels, out_channels, ksize, 1, expand_ratio,
+                       drop_rate))
+        self.block = nn.Sequential(*blocks)
+
+    def forward(self, x):
+        return self.block(x)
+
+
 class MbConv(nn.Module):
     def __init__(self,
                  in_channels,
@@ -29,8 +53,8 @@ class MbConv(nn.Module):
             SELayer(mid_channels),
             nn.Conv2d(mid_channels, out_channels, 1, bias=False),
             nn.BatchNorm2d(out_channels),
-            # DropConnect(drop_rate)
-            nn.Dropout(drop_rate)
+            DropConnect(drop_rate)
+            # nn.Dropout(drop_rate)
             if self.add and drop_rate > 0 else EmptyLayer(),
         )
 
