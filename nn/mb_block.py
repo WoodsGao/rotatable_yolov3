@@ -2,7 +2,7 @@ from random import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from . import Swish, CNS, SELayer, EmptyLayer, DropConnect
+from . import Swish, CNS, SELayer, EmptyLayer
 
 
 class MbBlock(nn.Module):
