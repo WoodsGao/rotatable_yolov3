@@ -23,7 +23,6 @@ class BasicModel(nn.Module):
         self.block4 = CNS(256, 512, stride=block4_stride)
         self.block5 = CNS(512, 1024, stride=block5_stride)
         self.init()
-        self.weight_standard()
 
     def init(self):
         for m in self.modules():
@@ -33,23 +32,6 @@ class BasicModel(nn.Module):
             elif isinstance(m, nn.BatchNorm2d) or isinstance(m, nn.GroupNorm):
                 m.weight.data.fill_(1)
                 m.bias.data.zero_()
-
-    def weight_standard(self):
-        for m in self.modules():
-            if isinstance(m, CNS):
-                for cm in m.modules():
-                    if isinstance(cm, nn.Conv2d):
-                        weight = cm.weight.data
-                        weight_mean = weight.mean(dim=1, keepdim=True)
-                        weight_mean = weight_mean.mean(dim=2, keepdim=True)
-                        weight_mean = weight_mean.mean(dim=3, keepdim=True)
-                        weight = weight - weight_mean
-
-                        var = torch.var(weight.view(weight.size(0), -1),
-                                        dim=1,
-                                        unbiased=False).clamp(min=1e-12)
-                        std = torch.sqrt(var).view(-1, 1, 1, 1)
-                        cm.weight.data = weight / std.expand_as(weight)
 
     def forward(self, x):
         x = self.block1(x)
