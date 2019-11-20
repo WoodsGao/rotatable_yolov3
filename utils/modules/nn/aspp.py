@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from . import CNS, DropConnect
+from . import CNS
 
 
 class AsppPooling(nn.Module):
