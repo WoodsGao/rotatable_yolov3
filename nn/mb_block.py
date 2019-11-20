@@ -16,7 +16,6 @@ class MbBlock(nn.Module):
                  drop_rate=0.2,
                  reps=1):
         super(MbBlock, self).__init__()
-        self.drop_rate = drop_rate
         blocks = [
             MbConv(in_channels, out_channels, ksize, stride, expand_ratio,
                    drop_rate)
@@ -25,14 +24,10 @@ class MbBlock(nn.Module):
             blocks.append(
                 MbConv(out_channels, out_channels, ksize, 1, expand_ratio,
                        drop_rate))
-        self.blocks = nn.ModuleList(blocks)
+        self.blocks = nn.Sequential(*blocks)
 
     def forward(self, x):
-        for bi, block in enumerate(self.blocks):
-            if bi > 0 and self.training and random() < self.drop_rate:
-                continue
-            x = block(x)
-        return x
+        return self.blocks(x)
 
 
 class MbConv(nn.Module):
@@ -44,6 +39,7 @@ class MbConv(nn.Module):
                  expand_ratio=6,
                  drop_rate=0.2):
         super(MbConv, self).__init__()
+        self.drop_rate = drop_rate
         mid_channels = in_channels * expand_ratio
         if in_channels == out_channels and stride == 1:
             self.add = True
@@ -63,7 +59,11 @@ class MbConv(nn.Module):
         )
 
     def forward(self, x):
+        if self.training and self.add and random() < self.drop_rate:
+            return x
         f = self.block(x)
         if self.add:
+            if not self.training:
+                f *= (1 - self.drop_rate)
             f += x
         return f
