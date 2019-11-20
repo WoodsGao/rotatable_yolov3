@@ -1,3 +1,4 @@
+from random import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -42,6 +43,7 @@ class MbConv(nn.Module):
             self.add = True
         else:
             self.add = False
+        self.drop_rate = drop_rate
         self.block = nn.Sequential(
             CNS(in_channels, mid_channels, 1)
             if expand_ratio > 1 else EmptyLayer(),
@@ -53,14 +55,14 @@ class MbConv(nn.Module):
             SELayer(mid_channels),
             nn.Conv2d(mid_channels, out_channels, 1, bias=False),
             nn.BatchNorm2d(out_channels),
-            DropConnect(drop_rate)
-            # nn.Dropout(drop_rate)
-            if self.add and drop_rate > 0 else EmptyLayer(),
         )
 
     def forward(self, x):
         if self.add:
-            identity = x
+            if random() < self.drop_rate:
+                return x
+            else:
+                identity = x
         x = self.block(x)
         if self.add:
             x = x + identity
