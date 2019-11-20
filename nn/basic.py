@@ -8,6 +8,7 @@ class EmptyLayer(nn.Module):
     def forward(self, x):
         return x
 
+
 # conv norm swish
 class CNS(nn.Module):
     def __init__(self,

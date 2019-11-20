@@ -28,7 +28,8 @@ class MbConv(nn.Module):
                 groups=mid_channels),
             SELayer(mid_channels),
             CNS(mid_channels, out_channels, 1),
-            DropConnect(drop_rate)
+            # DropConnect(drop_rate)
+            nn.Dropout(drop_rate)
             if self.add and drop_rate > 0 else EmptyLayer(),
         )
 
