@@ -1,5 +1,5 @@
 from .focal import FocalBCELoss
-from .activating_functions import Swish, CReLU
+from .activation import Swish, CReLU
 from .se_layer import SELayer
 from .basic import CNS, EmptyLayer
 from .separable_conv import SeparableConv2d
