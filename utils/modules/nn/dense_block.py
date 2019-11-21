@@ -27,16 +27,18 @@ class DenseBlock(nn.Module):
         if stride == 1:
             self.downsample = CutLayer(out_channels)
         else:
-            self.downsample = nn.Conv2d(in_channels, out_channels, 3, stride, 1)
+            self.downsample = nn.Conv2d(in_channels, out_channels, 3, stride,
+                                        1)
         self.block = nn.Sequential(
             CNS(in_channels, out_channels // 2, 1),
             CNS(
                 out_channels // 2,
-                out_channels,
+                out_channels // 2,
                 stride=stride,
                 dilation=dilation,
                 groups=32 if out_channels % 64 == 0 else 1,
             ),
+            CNS(out_channels // 2, out_channels, activate=False),
         )
 
     def forward(self, x):

@@ -42,7 +42,7 @@ class SegmentationDataset(BasicDataset):
         img = img.transpose(2, 0, 1)
         img = np.ascontiguousarray(img)
         seg[seg.sum(2) == 0, 0] = 1
-        seg_args = seg.argmax(2)
+        seg = np.ascontiguousarray(seg.transpose(2, 0, 1))
         # for ci, c in enumerate(self.classes):
         #     seg[seg_args == ci, 1 if ci > 0 else 0] = 1
-        return torch.FloatTensor(img), torch.LongTensor(seg_args)
+        return torch.FloatTensor(img), torch.FloatTensor(seg)

@@ -54,8 +54,8 @@ class MbConv(nn.Module):
                 stride=stride,
                 groups=mid_channels),
             SELayer(mid_channels),
-            nn.Conv2d(mid_channels, out_channels, 1, bias=False),
-            nn.BatchNorm2d(out_channels),
+            # See https://arxiv.org/pdf/1604.04112.pdf
+            CNS(mid_channels, out_channels, 1, activate=False),
         )
 
     def forward(self, x):
@@ -63,7 +63,6 @@ class MbConv(nn.Module):
             return x
         f = self.block(x)
         if self.add:
-            if not self.training:
-                f *= (1 - self.drop_rate)
-            f += x
+            f.add_(x)
+            f.mul_(0.5)
         return f
