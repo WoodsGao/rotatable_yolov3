@@ -42,11 +42,7 @@ class EfficientNetB7(BasicModel):
         return x
 
 
-<<<<<<< HEAD
-class EfficientNetB4(nn.Module):
-=======
 class EfficientNetB4(BasicModel):
->>>>>>> 237e4e8736df818b92f489a37aa368144a49aefd
     def __init__(self, output_stride=32):
         super(EfficientNetB4, self).__init__()
         assert output_stride in [8, 16, 32]
