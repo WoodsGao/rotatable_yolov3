@@ -195,7 +195,7 @@ def train(lr=1e-3):
     results = (
         0, 0, 0, 0, 0, 0, 0
     )  # 'P', 'R', 'mAP', 'F1', 'val GIoU', 'val Objectness', 'val Classification'
-    t0 = time.time()
+    optimizer.zero_grad()
     print('Starting %s for %g epochs...' %
           ('prebias' if opt.prebias else 'training', epochs))
     while epoch < epochs:  # epoch ------------------------------------------------------------------

@@ -111,8 +111,8 @@ class YOLOV3(BasicModel):
             yolo_index=0,  # 0, 1 or 2
         )  # yolo architecture
 
-        self.high2middle = CNS(448, 256)
-        self.middle_conv = MbBlock(256 + 160, 192, reps=6)
+        self.middle_conv = nn.Sequential(CNS(448 + 160, 192, 1),
+                                         MbBlock(192, 192, reps=6))
         self.middle_final = nn.Conv2d(192,
                                       len(anchors[-2]) * (5 + num_classes),
                                       3,
@@ -124,8 +124,8 @@ class YOLOV3(BasicModel):
             yolo_index=1,  # 0, 1 or 2
         )  # yolo architecture
 
-        self.middle2low = CNS(192, 128)
-        self.low_conv = MbBlock(128 + 56, 128, reps=6)
+        self.low_conv = nn.Sequential(CNS(192 + 56, 128, 1),
+                                      MbBlock(128, 128, reps=6))
         self.low_final = nn.Conv2d(128,
                                    len(anchors[-3]) * (5 + num_classes), 1)
         self.low_yolo = YOLOLayer(
@@ -154,7 +154,6 @@ class YOLOV3(BasicModel):
         high_output = self.high_yolo(high_output, img_size)
         output.append(high_output)
 
-        high = self.high2middle(high)
         high = F.interpolate(high,
                              scale_factor=2,
                              mode='bilinear',
@@ -165,7 +164,6 @@ class YOLOV3(BasicModel):
         middle_output = self.middle_yolo(middle_output, img_size)
         output.append(middle_output)
 
-        middle = self.middle2low(middle)
         middle = F.interpolate(middle,
                                scale_factor=2,
                                mode='bilinear',
