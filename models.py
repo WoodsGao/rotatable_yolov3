@@ -2,8 +2,8 @@ import torch.nn.functional as F
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from utils.modules.nn import CNS, Swish
-from utils.modules.backbones import BasicModel, DenseNet, EfficientNetB2, EfficientNetB4
+from utils.modules.nn import CNS, Swish, MbBlock
+from utils.modules.backbones import BasicModel, EfficientNetB4
 import math
 from utils.google_utils import *
 from utils.parse_config import *
@@ -100,11 +100,10 @@ class YOLOV3(BasicModel):
                           [[116, 90], [156, 198], [373, 326]]]):
         super(YOLOV3, self).__init__()
         self.backbone = EfficientNetB4()
-        self.high_final = nn.Sequential(
-            CNS(448, 256),
-            nn.Conv2d(256,
-                      len(anchors[-1]) * (5 + num_classes), 1),
-        )
+        self.high_final = nn.Conv2d(448,
+                                    len(anchors[-1]) * (5 + num_classes),
+                                    3,
+                                    padding=1)
         self.high_yolo = YOLOLayer(
             anchors=np.float32(anchors[-1]),  # anchor list
             nc=num_classes,  # number of classes
@@ -113,11 +112,11 @@ class YOLOV3(BasicModel):
         )  # yolo architecture
 
         self.high2middle = CNS(448, 256)
-        self.middle_final = nn.Sequential(
-            CNS(256 + 160, 192),
-            nn.Conv2d(192,
-                      len(anchors[-2]) * (5 + num_classes), 1),
-        )
+        self.middle_conv = MbBlock(256 + 160, 192, reps=6)
+        self.middle_final = nn.Conv2d(192,
+                                      len(anchors[-2]) * (5 + num_classes),
+                                      3,
+                                      padding=1)
         self.middle_yolo = YOLOLayer(
             anchors=np.float32(anchors[-2]),  # anchor list
             nc=num_classes,  # number of classes
@@ -125,12 +124,10 @@ class YOLOV3(BasicModel):
             yolo_index=1,  # 0, 1 or 2
         )  # yolo architecture
 
-        self.middle2low = CNS(256 + 160, 128)
-        self.low_final = nn.Sequential(
-            CNS(128 + 56, 128),
-            nn.Conv2d(128,
-                      len(anchors[-3]) * (5 + num_classes), 1),
-        )
+        self.middle2low = CNS(192, 128)
+        self.low_conv = MbBlock(128 + 56, 128, reps=6)
+        self.low_final = nn.Conv2d(128,
+                                   len(anchors[-3]) * (5 + num_classes), 1)
         self.low_yolo = YOLOLayer(
             anchors=np.float32(anchors[-3]),  # anchor list
             nc=num_classes,  # number of classes
@@ -163,6 +160,7 @@ class YOLOV3(BasicModel):
                              mode='bilinear',
                              align_corners=True)
         middle = torch.cat([high, middle], 1)
+        middle = self.middle_conv(middle)
         middle_output = self.middle_final(middle)
         middle_output = self.middle_yolo(middle_output, img_size)
         output.append(middle_output)
@@ -173,6 +171,7 @@ class YOLOV3(BasicModel):
                                mode='bilinear',
                                align_corners=True)
         low = torch.cat([middle, low], 1)
+        low = self.low_conv(low)
         low_output = self.low_final(low)
         low_output = self.low_yolo(low_output, img_size)
         output.append(low_output)
@@ -214,7 +213,7 @@ def create_grids(self,
 
 if __name__ == '__main__':
     model = YOLOV3(80)
-    a=torch.rand([4, 3, 416, 416])
+    a = torch.rand([4, 3, 416, 416])
     b = model(a)
     print(b[0].shape)
     b[0].mean().backward()
