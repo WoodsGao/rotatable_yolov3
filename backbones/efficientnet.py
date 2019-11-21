@@ -33,14 +33,6 @@ class EfficientNetB7(BasicModel):
             MbBlock(384, 640, 3, reps=4, drop_rate=0.5),
         )
 
-    def forward(self, x):
-        x = self.block1(x)
-        x = self.block2(x)
-        x = self.block3(x)
-        x = self.block4(x)
-        x = self.block5(x)
-        return x
-
 
 class EfficientNetB4(BasicModel):
     def __init__(self, output_stride=32):
