@@ -33,6 +33,11 @@ class BasicModel(nn.Module):
                 m.weight.data.fill_(1)
                 m.bias.data.zero_()
 
+    def weight_standard(self):
+        for m in self.modules():
+            if isinstance(m, CNS):
+                m.weight_standard()
+
     def forward(self, x):
         x = self.block1(x)
         x = self.block2(x)
