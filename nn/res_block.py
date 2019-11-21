@@ -23,12 +23,12 @@ class ResBlock(nn.Module):
                 dilation=dilation,
                 groups=32 if out_channels % 64 == 0 else 1,
             ),
-            CNS(out_channels // 2, out_channels, 1),
+            # See https://arxiv.org/pdf/1604.04112.pdf
+            CNS(out_channels // 2, out_channels, 1, activate=False),
         )
 
     def forward(self, x):
-        identity = x
-        x = self.block(x)
+        f = self.block(x)
         if self.add:
-            x = x + identity
-        return x
+            f += x
+        return f
