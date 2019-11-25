@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import os
 import torch
-from . import BasicDataset
+from . import BasicDataset, device
 from ..augments import augments_parser
 
 
@@ -83,14 +83,18 @@ class DetectionDataset(BasicDataset):
         zeros = np.zeros_like(classes)
         bboxes = np.stack([zeros, classes, x, y, w, h], 1)
         img = img[:, :, ::-1]
-        img /= 255.
+        img = np.clip(img, 0, 255)
         img = img.transpose(2, 0, 1)
         img = np.ascontiguousarray(img)
-        return torch.FloatTensor(img), torch.FloatTensor(bboxes), self.data[idx][0], (h, w)
+        img = np.uint8(img)
+        return torch.ByteTensor(img), torch.FloatTensor(bboxes), self.data[idx][0], (h, w)
 
     @staticmethod
     def collate_fn(batch):
-        img, dets, path, hw = list(zip(*batch))  # transposed
+        imgs, dets, path, hw = list(zip(*batch))  # transposed
         for i, l in enumerate(dets):
             l[:, 0] = i  # add target image index for build_targets()
-        return torch.stack(img, 0), torch.cat(dets, 0), path, hw
+        imgs = torch.stack(imgs, 0)
+        imgs = imgs.float().to(device)
+        imgs /= 255.
+        return imgs, torch.cat(dets, 0), path, hw

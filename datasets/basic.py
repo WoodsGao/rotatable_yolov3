@@ -10,6 +10,9 @@ import time
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
 
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+
 class BasicDataset(torch.utils.data.Dataset):
     def __init__(self, path, img_size=224, augments={}, skip_init=False):
         super(BasicDataset, self).__init__()

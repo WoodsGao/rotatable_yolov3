@@ -2,8 +2,10 @@ import cv2
 import numpy as np
 import os
 import torch
-from . import BasicDataset
+from . import BasicDataset, device
 from ..augments import augments_parser
+import torch.nn.functional as F
+from torch.utils.data.dataloader import default_collate
 
 
 def voc_colormap(N=256):
@@ -24,7 +26,7 @@ def voc_colormap(N=256):
     return cmap
 
 
-VOC_COLORMAP = voc_colormap(64)
+VOC_COLORMAP = voc_colormap(32)
 
 
 class SegmentationDataset(BasicDataset):
@@ -58,11 +60,21 @@ class SegmentationDataset(BasicDataset):
         for aug in augments_parser(self.augments, img.shape, self.img_size):
             img, _, seg = aug(img, seg=seg)
         img = img[:, :, ::-1]
-        img /= 255.
+        img = np.clip(img, 0, 255)
         img = img.transpose(2, 0, 1)
         img = np.ascontiguousarray(img)
+        img = np.uint8(img)
         seg[seg.sum(2) == 0, 0] = 1
-        seg = np.ascontiguousarray(seg.transpose(2, 0, 1))
+        # seg = np.ascontiguousarray(seg.transpose(2, 0, 1))
+        seg = seg.argmax(2)
         # for ci, c in enumerate(self.classes):
         #     seg[seg_args == ci, 1 if ci > 0 else 0] = 1
-        return torch.FloatTensor(img), torch.FloatTensor(seg)
+        return torch.ByteTensor(img), torch.ByteTensor(seg)
+
+    @staticmethod
+    def collate_fn(batch):
+        imgs, segs = default_collate(batch)
+        imgs = imgs.float().to(device)
+        imgs /= 255.
+        segs = F.one_hot(segs.long(), 32).permute(0, 3, 1, 2).float().to(device)
+        return (imgs, segs)

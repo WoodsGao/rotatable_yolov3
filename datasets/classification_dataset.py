@@ -1,9 +1,10 @@
-from . import BasicDataset
+from . import BasicDataset, device
 from ..augments import augments_parser
 import torch
 import numpy as np
 import os
 import cv2
+from torch.utils.data.dataloader import default_collate
 
 
 class ClassificationDataset(BasicDataset):
@@ -32,7 +33,15 @@ class ClassificationDataset(BasicDataset):
         for aug in augments_parser(self.augments, img.shape, self.img_size):
             img, _, __ = aug(img)
         img = img[:, :, ::-1]
-        img /= 255.
+        img = np.clip(img, 0, 255)
         img = img.transpose(2, 0, 1)
         img = np.ascontiguousarray(img)
-        return torch.FloatTensor(img), self.data[idx][1]
+        img = np.uint8(img)
+        return torch.ByteTensor(img), self.data[idx][1]
+
+    @staticmethod
+    def collate_fn(batch):
+        imgs, labels = default_collate(batch)
+        imgs = imgs.float().to(device)
+        imgs /= 255.
+        return (imgs, labels)
