@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
 
 class BasicDataset(torch.utils.data.Dataset):
-    def __init__(self, path, img_size=224, augments={}):
+    def __init__(self, path, img_size=224, augments={}, skip_init=False):
         super(BasicDataset, self).__init__()
         os.makedirs('tmp', exist_ok=True)
         self.path = path
@@ -25,7 +25,8 @@ class BasicDataset(torch.utils.data.Dataset):
         self.cache_list = []
         self.db_name = 'tmp/' + base64.b64encode(
             os.path.abspath(path).encode('utf-8')).decode('utf-8')
-        self.init_db()
+        if not skip_init:
+            self.init_db()
         if len(augments):
             p = Process(target=self.worker)
             p.start()
