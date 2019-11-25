@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import os
 import torch
-from . import BasicDataset, device
+from . import BasicDataset
 from ..augments import augments_parser
 import torch.nn.functional as F
 from torch.utils.data.dataloader import default_collate
@@ -74,7 +74,7 @@ class SegmentationDataset(BasicDataset):
     @staticmethod
     def collate_fn(batch):
         imgs, segs = default_collate(batch)
-        imgs = imgs.float().to(device)
+        imgs = imgs.float()
         imgs /= 255.
-        segs = F.one_hot(segs.long(), 32).permute(0, 3, 1, 2).float().to(device)
+        segs = F.one_hot(segs.long(), 32).permute(0, 3, 1, 2).float()
         return (imgs, segs)

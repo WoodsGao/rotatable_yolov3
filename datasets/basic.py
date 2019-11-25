@@ -10,9 +10,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
-
 class BasicDataset(torch.utils.data.Dataset):
     def __init__(self, path, img_size=224, augments={}, skip_init=False):
         super(BasicDataset, self).__init__()
@@ -64,9 +61,12 @@ class BasicDataset(torch.utils.data.Dataset):
                 items = list(
                     pool.map(self.get_item, missed_keys[ki:ki + batch_size]))
                 items = list(
-                    pool.map(pickle.dumps,
-                            [[item, self.checks[key]]
-                            for item, key in zip(items, missed_keys[ki:ki + batch_size])]))
+                    pool.map(
+                        pickle.dumps,
+                        [[item, self.checks[key]]
+                         for item, key in zip(items, missed_keys[ki:ki +
+                                                                 batch_size])
+                         ]))
                 for item, key in zip(items, missed_keys[ki:ki + batch_size]):
                     txn.put(key.to_bytes(10, 'little'), value=item)
                 # break

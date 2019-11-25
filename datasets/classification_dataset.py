@@ -1,4 +1,4 @@
-from . import BasicDataset, device
+from . import BasicDataset
 from ..augments import augments_parser
 import torch
 import numpy as np
@@ -42,6 +42,6 @@ class ClassificationDataset(BasicDataset):
     @staticmethod
     def collate_fn(batch):
         imgs, labels = default_collate(batch)
-        imgs = imgs.float().to(device)
+        imgs = imgs.float()
         imgs /= 255.
         return (imgs, labels)

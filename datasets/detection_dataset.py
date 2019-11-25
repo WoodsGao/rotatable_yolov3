@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import os
 import torch
-from . import BasicDataset, device
+from . import BasicDataset
 from ..augments import augments_parser
 
 
@@ -95,6 +95,6 @@ class DetectionDataset(BasicDataset):
         for i, l in enumerate(dets):
             l[:, 0] = i  # add target image index for build_targets()
         imgs = torch.stack(imgs, 0)
-        imgs = imgs.float().to(device)
+        imgs = imgs.float()
         imgs /= 255.
         return imgs, torch.cat(dets, 0), path, hw
