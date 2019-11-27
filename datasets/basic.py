@@ -7,6 +7,7 @@ import lmdb
 import pickle
 import base64
 import time
+from threading import Thread
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
 
@@ -27,9 +28,9 @@ class BasicDataset(torch.utils.data.Dataset):
             os.path.abspath(path).encode('utf-8')).decode('utf-8')
         if not skip_init:
             self.init_db()
-        if len(augments):
-            p = Process(target=self.worker)
-            p.start()
+            if len(augments) > 0:
+                p = Thread(target=self.worker, daemon=True)
+                p.start()
 
     def init_db(self):
         # init
