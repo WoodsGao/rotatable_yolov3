@@ -46,14 +46,6 @@ class Trainer:
             self.mixed_precision = False
         else:
             self.mixed_precision = mixed_precision
-        if self.mixed_precision:
-            model, optimizer = amp.initialize(model,
-                                              optimizer,
-                                              opt_level='O1',
-                                              verbosity=0)
-        if distributed:
-            model = torch.nn.parallel.DistributedDataParallel(
-                model, find_unused_parameters=True)
         self.model = model
         self.optimizer = optimizer
         if weights:
@@ -61,6 +53,14 @@ class Trainer:
             if lr > 0:
                 for pg in self.optimizer.param_groups:
                     pg['lr'] = lr
+        if self.mixed_precision:
+            self.model, self.optimizer = amp.initialize(self.model,
+                                                        self.optimizer,
+                                                        opt_level='O1',
+                                                        verbosity=0)
+        if distributed:
+            self.model = torch.nn.parallel.DistributedDataParallel(
+                self.model, find_unused_parameters=True)
         self.optimizer.zero_grad()
         if distributed:
             self.model.require_backward_grad_sync = False
@@ -84,9 +84,13 @@ class Trainer:
         if len(save_path_list) == 0:
             return False
         state_dict = {
-            'model': self.model.state_dict(),
-            'm': self.metrics,
-            'e': self.epoch
+            'model':
+            self.model.module.state_dict()
+            if self.distributed else self.model.state_dict(),
+            'm':
+            self.metrics,
+            'e':
+            self.epoch
         }
         if self.adam:
             state_dict['adam'] = self.optimizer.state_dict()
@@ -103,7 +107,6 @@ class Trainer:
         for idx, (inputs, targets) in pbar:
             if inputs.size(0) < 2:
                 continue
-            c += 1
             self.accumulate_count += 1
             batch_idx = idx + 1
             if self.accumulate_count % self.accumulate == 0 and self.distributed:
