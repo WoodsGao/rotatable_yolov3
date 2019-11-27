@@ -72,8 +72,8 @@ class SegmentationDataset(BasicDataset):
         return torch.ByteTensor(img), torch.ByteTensor(seg)
 
     @staticmethod
-    def collate_fn(batch):
-        imgs, segs = default_collate(batch)
+    def post_fetch_fn(batch):
+        imgs, segs = batch
         imgs = imgs.float()
         imgs /= 255.
         segs = F.one_hot(segs.long(), 32).permute(0, 3, 1, 2).float()

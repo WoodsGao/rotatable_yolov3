@@ -2,8 +2,8 @@ import os
 import torch
 import torch.optim as optim
 from tqdm import tqdm
-from time import time
 from . import device
+
 amp = None
 try:
     from apex import amp
@@ -99,12 +99,8 @@ class Trainer:
         print('Epoch: %d' % self.epoch)
         self.model.train()
         total_loss = 0
-        c = 0
-        t = [0, 0, 0, 0]
         pbar = tqdm(enumerate(self.fetcher), total=len(self.fetcher))
-        t0 = time()
         for idx, (inputs, targets) in pbar:
-            t1 = time()
             if inputs.size(0) < 2:
                 continue
             c += 1
@@ -113,28 +109,19 @@ class Trainer:
             if self.accumulate_count % self.accumulate == 0 and self.distributed:
                 self.model.require_backward_grad_sync = True
             outputs = self.model(inputs)
-            t2 = time()
             loss = self.loss_fn(outputs, targets)
             total_loss += loss.item()
             loss /= self.accumulate
-            t3 = time()
             # Compute gradient
             if self.mixed_precision:
                 with amp.scale_loss(loss, self.optimizer) as scaled_loss:
                     scaled_loss.backward()
             else:
                 loss.backward()
-            t4 = time()
-            t[0] += t1 - t0
-            t[1] += t2 - t1
-            t[2] += t3 - t2
-            t[3] += t4 - t3
             mem = torch.cuda.memory_cached() / 1E9 if torch.cuda.is_available(
             ) else 0  # (GB)
-            pbar.set_description(
-                'mem: %8g, loss: %8g, scale: %8g, %6g %6g %6g %6g' %
-                (mem, total_loss / batch_idx, inputs.size(2), t[0] / c,
-                 t[1] / c, t[2] / c, t[3] / c))
+            pbar.set_description('mem: %8g, loss: %8g, scale: %8g' %
+                                 (mem, total_loss / batch_idx, inputs.size(2)))
             if self.accumulate_count % self.accumulate == 0:
                 self.accumulate_count = 0
                 # print(self.model.module.backbone.block1[1].blocks[0].block[1].conv.weight)
@@ -142,7 +129,6 @@ class Trainer:
                 self.optimizer.zero_grad()
                 if self.distributed:
                     self.model.require_backward_grad_sync = False
-            t0 = time()
         torch.cuda.empty_cache()
         self.epoch += 1
         return total_loss / len(self.fetcher)

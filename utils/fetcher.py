@@ -7,10 +7,11 @@ from . import device
 
 # Referencehttps://github.com/NVIDIA/apex/blob/master/examples/imagenet/main_amp.py
 class Fetcher:
-    def __init__(self, loader, max_len=5):
+    def __init__(self, loader, post_fetch_fn=None):
         self.idx = 0
         self.loader = loader
         self.loader_iter = iter(loader)
+        self.post_fetch_fn = post_fetch_fn
         if device == 'cuda':
             self.stream = torch.cuda.Stream()
         self.preload()
@@ -42,4 +43,6 @@ class Fetcher:
         self.preload()
         if batch is None:
             raise StopIteration
+        if self.post_fetch_fn is not None:
+            batch = self.post_fetch_fn(batch)
         return batch
