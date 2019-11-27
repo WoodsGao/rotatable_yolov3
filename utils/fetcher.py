@@ -11,7 +11,8 @@ class Fetcher:
         self.idx = 0
         self.loader = loader
         self.loader_iter = iter(loader)
-        self.stream = torch.cuda.Stream()
+        if device == 'cuda':
+            self.stream = torch.cuda.Stream()
         self.preload()
 
     def __len__(self):
@@ -24,8 +25,8 @@ class Fetcher:
         try:
             self.batch = next(self.loader_iter)
         except StopIteration:
+            self.batch = None
             self.loader_iter = iter(self.loader)
-            self.batch = next(self.loader_iter)
         if device == 'cuda':
             with torch.cuda.stream(self.stream):
                 self.batch = [
@@ -38,4 +39,6 @@ class Fetcher:
             torch.cuda.current_stream().wait_stream(self.stream)
         batch = self.batch
         self.preload()
+        if batch is None:
+            raise StopIteration
         return batch

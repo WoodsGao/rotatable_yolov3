@@ -137,6 +137,7 @@ class Trainer:
                  t[1] / c, t[2] / c, t[3] / c))
             if self.accumulate_count % self.accumulate == 0:
                 self.accumulate_count = 0
+                # print(self.model.module.backbone.block1[1].blocks[0].block[1].conv.weight)
                 self.optimizer.step()
                 self.optimizer.zero_grad()
                 if self.distributed:
