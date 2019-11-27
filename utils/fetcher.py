@@ -27,6 +27,7 @@ class Fetcher:
         except StopIteration:
             self.batch = None
             self.loader_iter = iter(self.loader)
+            return None
         if device == 'cuda':
             with torch.cuda.stream(self.stream):
                 self.batch = [
