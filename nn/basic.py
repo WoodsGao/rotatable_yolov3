@@ -57,13 +57,13 @@ class CNS(nn.Module):
                  activate=True):
         super(CNS, self).__init__()
         self.conv = nn.Conv2d(in_channels,
-                             out_channels,
-                             ksize,
-                             stride=stride,
-                             padding=(ksize - 1) // 2 - 1 + dilation,
-                             groups=groups,
-                             dilation=dilation,
-                             bias=False)
+                              out_channels,
+                              ksize,
+                              stride=stride,
+                              padding=(ksize - 1) // 2 * dilation,
+                              groups=groups,
+                              dilation=dilation,
+                              bias=False)
         # if out_channels % 32 == 0:
         #     self.norm = nn.GroupNorm(32, out_channels)
         # elif out_channels % 8 == 0:
