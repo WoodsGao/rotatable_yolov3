@@ -1,5 +1,6 @@
 import os
 import random
+from utils.modules.utils import IMG_EXT
 
 
 def run(data_dir, train_rate=0.7, shuffle=True):
@@ -14,7 +15,7 @@ def run(data_dir, train_rate=0.7, shuffle=True):
     """
     img_dir = os.path.join(data_dir, 'images')
     names = os.listdir(img_dir)
-    names = [name for name in names if os.path.splitext(name)[1] in ['.jpg', '.jpeg', '.png', '.tiff']]
+    names = [name for name in names if os.path.splitext(name)[1] in IMG_EXT]
     names.sort()
     if shuffle:
         random.shuffle(names)
