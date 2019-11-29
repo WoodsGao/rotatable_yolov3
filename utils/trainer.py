@@ -1,6 +1,7 @@
 import os
 import torch
 import torch.optim as optim
+import torch.distributed as dist
 from tqdm import tqdm
 from . import device
 
@@ -22,7 +23,6 @@ class Trainer:
                  accumulate=1,
                  adam=False,
                  lr=0,
-                 distributed=False,
                  mixed_precision=False):
         self.accumulate_count = 0
         self.metrics = 0
@@ -58,13 +58,12 @@ class Trainer:
                                                         self.optimizer,
                                                         opt_level='O1',
                                                         verbosity=0)
-        if distributed:
+        if dist.is_available() and dist.is_initialized():
             self.model = torch.nn.parallel.DistributedDataParallel(
                 self.model, find_unused_parameters=True)
         self.optimizer.zero_grad()
-        if distributed:
+        if dist.is_available() and dist.is_initialized():
             self.model.require_backward_grad_sync = False
-        self.distributed = distributed
 
     def load(self, weights):
         state_dict = torch.load(weights, map_location=device)
@@ -86,7 +85,7 @@ class Trainer:
         state_dict = {
             'model':
             self.model.module.state_dict()
-            if self.distributed else self.model.state_dict(),
+            if dist.is_available() and dist.is_initialized() else self.model.state_dict(),
             'm':
             self.metrics,
             'e':
@@ -109,7 +108,7 @@ class Trainer:
                 continue
             self.accumulate_count += 1
             batch_idx = idx + 1
-            if self.accumulate_count % self.accumulate == 0 and self.distributed:
+            if self.accumulate_count % self.accumulate == 0 and dist.is_available() and dist.is_initialized():
                 self.model.require_backward_grad_sync = True
             outputs = self.model(inputs)
             loss = self.loss_fn(outputs, targets)
@@ -130,7 +129,7 @@ class Trainer:
                 # print(self.model.module.backbone.block1[1].blocks[0].block[1].conv.weight)
                 self.optimizer.step()
                 self.optimizer.zero_grad()
-                if self.distributed:
+                if dist.is_available() and dist.is_initialized():
                     self.model.require_backward_grad_sync = False
         torch.cuda.empty_cache()
         self.epoch += 1
