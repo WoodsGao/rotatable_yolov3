@@ -1,13 +1,12 @@
-import torch.nn.functional as F
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from utils.modules.nn import CNS, Swish, MbBlock
-from utils.modules.backbones import BasicModel, EfficientNetB4
+from utils.modules.backbones import BasicModel, EfficientNet
 import math
-from utils.google_utils import *
-from utils.parse_config import *
-from utils.utils import *
+
+# from utils.utils import *
 
 ONNX_EXPORT = False
 
@@ -99,8 +98,8 @@ class YOLOV3(BasicModel):
                           [[30, 61], [62, 45], [59, 119]],
                           [[116, 90], [156, 198], [373, 326]]]):
         super(YOLOV3, self).__init__()
-        self.backbone = EfficientNetB4()
-        self.high_final = nn.Conv2d(448,
+        self.backbone = EfficientNet()
+        self.high_final = nn.Conv2d(352,
                                     len(anchors[-1]) * (5 + num_classes),
                                     3,
                                     padding=1)
@@ -111,7 +110,7 @@ class YOLOV3(BasicModel):
             yolo_index=0,  # 0, 1 or 2
         )  # yolo architecture
 
-        self.middle_conv = nn.Sequential(CNS(448 + 160, 192, 1),
+        self.middle_conv = nn.Sequential(CNS(480, 192, 1),
                                          MbBlock(192, 192, reps=6))
         self.middle_final = nn.Conv2d(192,
                                       len(anchors[-2]) * (5 + num_classes),
@@ -124,7 +123,7 @@ class YOLOV3(BasicModel):
             yolo_index=1,  # 0, 1 or 2
         )  # yolo architecture
 
-        self.low_conv = nn.Sequential(CNS(192 + 56, 128, 1),
+        self.low_conv = nn.Sequential(CNS(240, 128, 1),
                                       MbBlock(128, 128, reps=6))
         self.low_final = nn.Conv2d(128,
                                    len(anchors[-3]) * (5 + num_classes), 1)

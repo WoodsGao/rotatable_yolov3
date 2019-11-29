@@ -1,9 +1,6 @@
-import glob
-import os
 import random
-import shutil
 from pathlib import Path
-
+import torch.distributed as dist
 import cv2
 import matplotlib
 import matplotlib.pyplot as plt
@@ -12,22 +9,7 @@ import torch
 import torch.nn as nn
 from tqdm import tqdm
 
-from . import torch_utils  # , google_utils
-
 matplotlib.rc('font', **{'size': 11})
-
-# Set printoptions
-torch.set_printoptions(linewidth=320, precision=5, profile='long')
-np.set_printoptions(linewidth=320,
-                    formatter={'float_kind': '{:11.5g}'.format
-                               })  # format short g, %precision=5
-
-# Prevent OpenCV from multithreading (to use PyTorch DataLoader)
-cv2.setNumThreads(0)
-
-
-def floatn(x, n=3):  # format floats to n decimals
-    return float(format(x, '.%gf' % n))
 
 
 def init_seeds(seed=0):
@@ -73,49 +55,6 @@ def labels_to_image_weights(labels, nc=80, class_weights=np.ones(80)):
     image_weights = (class_weights.reshape(1, nc) * class_counts).sum(1)
     # index = random.choices(range(n), weights=image_weights, k=1)  # weight image sample
     return image_weights
-
-
-def coco_class_weights():  # frequency of each class in coco train2014
-    n = [
-        187437, 4955, 30920, 6033, 3838, 4332, 3160, 7051, 7677, 9167, 1316,
-        1372, 833, 6757, 7355, 3302, 3776, 4671, 6769, 5706, 3908, 903, 3686,
-        3596, 6200, 7920, 8779, 4505, 4272, 1862, 4698, 1962, 4403, 6659, 2402,
-        2689, 4012, 4175, 3411, 17048, 5637, 14553, 3923, 5539, 4289, 10084,
-        7018, 4314, 3099, 4638, 4939, 5543, 2038, 4004, 5053, 4578, 27292,
-        4113, 5931, 2905, 11174, 2873, 4036, 3415, 1517, 4122, 1980, 4464,
-        1190, 2302, 156, 3933, 1877, 17630, 4337, 4624, 1075, 3468, 135, 1380
-    ]
-    weights = 1 / torch.Tensor(n)
-    weights /= weights.sum()
-    # with open('data/coco.names', 'r') as f:
-    #     for k, v in zip(f.read().splitlines(), n):
-    #         print('%20s: %g' % (k, v))
-    return weights
-
-
-def coco80_to_coco91_class(
-):  # converts 80-index (val2014) to 91-index (paper)
-    # https://tech.amikelive.com/node-718/what-object-categories-labels-are-in-coco-dataset/
-    # a = np.loadtxt('data/coco.names', dtype='str', delimiter='\n')
-    # b = np.loadtxt('data/coco_paper.names', dtype='str', delimiter='\n')
-    # x = [list(a[i] == b).index(True) + 1 for i in range(80)]  # darknet to coco
-    x = [
-        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19, 20, 21,
-        22, 23, 24, 25, 27, 28, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42,
-        43, 44, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61,
-        62, 63, 64, 65, 67, 70, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 84,
-        85, 86, 87, 88, 89, 90
-    ]
-    return x
-
-
-def weights_init_normal(m):
-    classname = m.__class__.__name__
-    if classname.find('Conv') != -1:
-        torch.nn.init.normal_(m.weight.data, 0.0, 0.03)
-    elif classname.find('BatchNorm2d') != -1:
-        torch.nn.init.normal_(m.weight.data, 1.0, 0.03)
-        torch.nn.init.constant_(m.bias.data, 0.0)
 
 
 def xyxy2xywh(x):
@@ -307,63 +246,43 @@ def wh_iou(box1, box2):
     return inter_area / union_area  # iou
 
 
-class FocalLoss(nn.Module):
-    # Wraps focal loss around existing loss_fcn() https://arxiv.org/pdf/1708.02002.pdf
-    # i.e. criteria = FocalLoss(nn.BCEWithLogitsLoss(), gamma=2.5)
-    def __init__(self, loss_fcn, gamma=0.5, alpha=1, reduction='mean'):
-        super(FocalLoss, self).__init__()
-        loss_fcn.reduction = 'none'  # required to apply FL to each element
-        self.loss_fcn = loss_fcn
-        self.gamma = gamma
-        self.alpha = alpha
-        self.reduction = reduction
+class ComputeLoss:
+    def __init__(self, model):
+        self.model = model
 
-    def forward(self, input, target):
-        loss = self.loss_fcn(input, target)
-        loss *= self.alpha * (1.000001 - torch.exp(
-            -loss))**self.gamma  # non-zero power for gradient stability
-
-        if self.reduction == 'mean':
-            return loss.mean()
-        elif self.reduction == 'sum':
-            return loss.sum()
-        else:  # 'none'
-            return loss
-
-
-def compute_loss(p, targets, model):  # predictions, targets, model
-    ft = torch.cuda.FloatTensor if p[0].is_cuda else torch.Tensor
-    lcls, lbox, lobj = ft([0]), ft([0]), ft([0])
-    tcls, tbox, indices, anchor_vec = build_targets(model, targets)
-    # Define criteria
-    BCEcls = nn.BCEWithLogitsLoss()
-    BCEobj = nn.BCEWithLogitsLoss()
-    BCE = nn.BCEWithLogitsLoss()
-    CE = nn.CrossEntropyLoss()  # weight=model.class_weights
-
-    # Compute losses
-    for i, pi in enumerate(p):  # layer index, layer predictions
-        b, a, gj, gi = indices[i]  # image, anchor, gridy, gridx
-        tobj = torch.zeros_like(pi[..., 0])  # target obj
+    def __call__(self, p, targets):
+        ft = torch.cuda.FloatTensor if p[0].is_cuda else torch.Tensor
+        lcls, lbox, lobj = ft([0]), ft([0]), ft([0])
+        tcls, tbox, indices, anchor_vec = build_targets(self.model, targets)
+        # Define criteria
+        BCEcls = nn.BCEWithLogitsLoss()
+        BCEobj = nn.BCEWithLogitsLoss()
+        BCE = nn.BCEWithLogitsLoss()
+        CE = nn.CrossEntropyLoss()  # weight=model.class_weights
 
         # Compute losses
-        nb = len(b)
-        if nb:  # number of targets
-            ps = pi[b, a, gj, gi]  # prediction subset corresponding to targets
-            tobj[b, a, gj, gi] = 1.0  # obj
-            # ps[:, 2:4] = torch.sigmoid(ps[:, 2:4])  # wh power loss (uncomment)
+        for i, pi in enumerate(p):  # layer index, layer predictions
+            b, a, gj, gi = indices[i]  # image, anchor, gridy, gridx
+            tobj = torch.zeros_like(pi[..., 0])  # target obj
 
-            # GIoU
-            pxy = torch.sigmoid(
-                ps[:, 0:2]
-            )  # pxy = pxy * s - (s - 1) / 2,  s = 1.5  (scale_xy)
-            pbox = torch.cat((pxy, torch.exp(ps[:, 2:4]) * anchor_vec[i]),
-                             1)  # predicted box
-            giou = bbox_iou(pbox.t(), tbox[i], x1y1x2y2=False,
-                            GIoU=True)  # giou computation
-            lbox += (1.0 - giou).mean()  # giou loss
+            # Compute losses
+            nb = len(b)
+            if nb:  # number of targets
+                ps = pi[b, a, gj,
+                        gi]  # prediction subset corresponding to targets
+                tobj[b, a, gj, gi] = 1.0  # obj
+                # ps[:, 2:4] = torch.sigmoid(ps[:, 2:4])  # wh power loss (uncomment)
 
-            if model.nc > 1:  # cls loss (only if multiple classes)
+                # GIoU
+                pxy = torch.sigmoid(
+                    ps[:, 0:2]
+                )  # pxy = pxy * s - (s - 1) / 2,  s = 1.5  (scale_xy)
+                pbox = torch.cat((pxy, torch.exp(ps[:, 2:4]) * anchor_vec[i]),
+                                 1)  # predicted box
+                giou = bbox_iou(pbox.t(), tbox[i], x1y1x2y2=False,
+                                GIoU=True)  # giou computation
+                lbox += (1.0 - giou).mean()  # giou loss
+
                 t = torch.zeros_like(ps[:, 5:])  # targets
                 t[range(nb), tcls[i]] = 1.0
                 # lcls += BCE(ps[:, 5:], t).mean()  # BCE
@@ -375,17 +294,18 @@ def compute_loss(p, targets, model):  # predictions, targets, model
                 # lcls += (BCEcls(ps[:, 5:], t) / nt).mean() * nt.mean()  # v1
                 # lcls += (BCEcls(ps[:, 5:], t) / nt[tcls[i]].view(-1,1)).mean() * nt.mean()  # v2
 
-            # Append targets to text file
-            # with open('targets.txt', 'a') as file:
-            #     [file.write('%11.5g ' * 4 % tuple(x) + '\n') for x in torch.cat((txy[i], twh[i]), 1)]
-        bce = BCE(pi[..., 4], tobj)
-        lobj += bce  # obj loss
+                # Append targets to text file
+                # with open('targets.txt', 'a') as file:
+                #     [file.write('%11.5g ' * 4 % tuple(x) + '\n') for x in torch.cat((txy[i], twh[i]), 1)]
+            bce = BCE(pi[..., 4], tobj)
+            lobj += bce  # obj loss
 
-    lbox *= 3.31
-    lobj *= 42.4
-    lcls *= 40
-    loss = lbox + lobj + lcls
-    return loss, torch.cat((lbox, lobj, lcls, loss)).detach()
+        lbox *= 3.31
+        lobj *= 42.4
+        lcls *= 40
+        loss = lbox + lobj + lcls
+        # return loss, torch.cat((lbox, lobj, lcls, loss)).detach()
+        return loss
 
 
 def build_targets(model, targets):
@@ -393,11 +313,9 @@ def build_targets(model, targets):
 
     nt = len(targets)
     tcls, tbox, indices, av = [], [], [], []
-    multi_gpu = type(model) in (nn.parallel.DataParallel,
-                                nn.parallel.DistributedDataParallel)
     for i in model.yolo_layers:
         # get number of grid points and anchor vec for this yolo layer
-        if multi_gpu:
+        if dist.is_initialized():
             ng, anchor_vec = model.module.module_list[
                 i].ng, model.module.module_list[i].anchor_vec
         else:
@@ -416,7 +334,7 @@ def build_targets(model, targets):
             iou = iou.view(-1)  # use all ious
 
             # reject anchors below iou_thres (OPTIONAL, increases P, lowers R)
-            j = iou > model.hyp['iou_t']  # iou threshold hyperparameter
+            j = iou > 0.213  # iou threshold hyperparameter
             t, a, gwh = t[j], a[j], gwh[j]
 
         # Indices
@@ -432,8 +350,6 @@ def build_targets(model, targets):
 
         # Class
         tcls.append(c)
-        if c.shape[0]:  # if any targets
-            assert c.max() <= model.nc, 'Target classes exceed model classes'
 
     return tcls, tbox, indices, av
 
@@ -563,199 +479,6 @@ def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.5):
     return output
 
 
-def get_yolo_layers(model):
-    bool_vec = [x['type'] == 'yolo' for x in model.module_defs]
-    return [i for i, x in enumerate(bool_vec) if x]  # [82, 94, 106] for yolov3
-
-
-def print_model_biases(model):
-    # prints the bias neurons preceding each yolo layer
-    print('\nModel Bias Summary (per output layer):')
-    multi_gpu = type(model) in (nn.parallel.DataParallel,
-                                nn.parallel.DistributedDataParallel)
-    for l in model.yolo_layers:  # print pretrained biases
-        if multi_gpu:
-            na = model.module.module_list[l].na  # number of anchors
-            b = model.module.module_list[l - 1][0].bias.view(na,
-                                                             -1)  # bias 3x85
-        else:
-            na = model.module_list[l].na
-            b = model.module_list[l - 1][0].bias.view(na, -1)  # bias 3x85
-        print(
-            'regression: %5.2f+/-%-5.2f ' % (b[:, :4].mean(), b[:, :4].std()),
-            'objectness: %5.2f+/-%-5.2f ' % (b[:, 4].mean(), b[:, 4].std()),
-            'classification: %5.2f+/-%-5.2f' %
-            (b[:, 5:].mean(), b[:, 5:].std()))
-
-
-def strip_optimizer(
-        f='weights/last.pt'):  # from utils.utils import *; strip_optimizer()
-    # Strip optimizer from *.pt files for lighter files (reduced by 2/3 size)
-    x = torch.load(f)
-    x['optimizer'] = None
-    torch.save(x, f)
-
-
-def create_backbone(
-        f='weights/last.pt'):  # from utils.utils import *; create_backbone()
-    # create a backbone from a *.pt file
-    x = torch.load(f)
-    x['optimizer'] = None
-    x['training_results'] = None
-    x['epoch'] = -1
-    for p in x['model'].values():
-        try:
-            p.requires_grad = True
-        except:
-            pass
-    torch.save(x, 'weights/backbone.pt')
-
-
-def coco_class_count(path='../coco/labels/train2014/'):
-    # Histogram of occurrences per class
-    nc = 80  # number classes
-    x = np.zeros(nc, dtype='int32')
-    files = sorted(glob.glob('%s/*.*' % path))
-    for i, file in enumerate(files):
-        labels = np.loadtxt(file, dtype=np.float32).reshape(-1, 5)
-        x += np.bincount(labels[:, 0].astype('int32'), minlength=nc)
-        print(i, len(files))
-
-
-def coco_only_people(path='../coco/labels/val2014/'):
-    # Find images with only people
-    files = sorted(glob.glob('%s/*.*' % path))
-    for i, file in enumerate(files):
-        labels = np.loadtxt(file, dtype=np.float32).reshape(-1, 5)
-        if all(labels[:, 0] == 0):
-            print(labels.shape[0], file)
-
-
-def select_best_evolve(
-        path='evolve*.txt'):  # from utils.utils import *; select_best_evolve()
-    # Find best evolved mutation
-    for file in sorted(glob.glob(path)):
-        x = np.loadtxt(file, dtype=np.float32, ndmin=2)
-        print(file, x[fitness(x).argmax()])
-
-
-def crop_images_random(
-        path='../images/',
-        scale=0.50):  # from utils.utils import *; crop_images_random()
-    # crops images into random squares up to scale fraction
-    # WARNING: overwrites images!
-    for file in tqdm(sorted(glob.glob('%s/*.*' % path))):
-        img = cv2.imread(file)  # BGR
-        if img is not None:
-            h, w = img.shape[:2]
-
-            # create random mask
-            a = 30  # minimum size (pixels)
-            mask_h = random.randint(a, int(max(a, h * scale)))  # mask height
-            mask_w = mask_h  # mask width
-
-            # box
-            xmin = max(0, random.randint(0, w) - mask_w // 2)
-            ymin = max(0, random.randint(0, h) - mask_h // 2)
-            xmax = min(w, xmin + mask_w)
-            ymax = min(h, ymin + mask_h)
-
-            # apply random color mask
-            cv2.imwrite(file, img[ymin:ymax, xmin:xmax])
-
-
-def coco_single_class_labels(path='../coco/labels/train2014/', label_class=43):
-    # Makes single-class coco datasets. from utils.utils import *; coco_single_class_labels()
-    if os.path.exists('new/'):
-        shutil.rmtree('new/')  # delete output folder
-    os.makedirs('new/')  # make new output folder
-    os.makedirs('new/labels/')
-    os.makedirs('new/images/')
-    for file in tqdm(sorted(glob.glob('%s/*.*' % path))):
-        with open(file, 'r') as f:
-            labels = np.array([x.split() for x in f.read().splitlines()],
-                              dtype=np.float32)
-        i = labels[:, 0] == label_class
-        if any(i):
-            img_file = file.replace('labels', 'images').replace('txt', 'jpg')
-            labels[:, 0] = 0  # reset class to 0
-            with open('new/images.txt', 'a') as f:  # add image to dataset list
-                f.write(img_file + '\n')
-            with open('new/labels/' + Path(file).name,
-                      'a') as f:  # write label
-                for l in labels[i]:
-                    f.write('%g %.6f %.6f %.6f %.6f\n' % tuple(l))
-            shutil.copyfile(
-                src=img_file,
-                dst='new/images/' +
-                Path(file).name.replace('txt', 'jpg'))  # copy images
-
-
-def kmeans_targets(
-        path='../coco/trainvalno5k.txt', n=9,
-        img_size=416):  # from utils.utils import *; kmeans_targets()
-    # Produces a list of target kmeans suitable for use in *.cfg files
-    from utils.datasets import LoadImagesAndLabels
-    from scipy import cluster
-
-    # Get label wh
-    dataset = LoadImagesAndLabels(path,
-                                  augment=True,
-                                  rect=True,
-                                  cache_labels=True)
-    for s, l in zip(dataset.shapes, dataset.labels):
-        l[:, [1, 3]] *= s[0]  # normalized to pixels
-        l[:, [2, 4]] *= s[1]
-        l[:, 1:] *= img_size / max(s)  # nominal img_size for training
-    wh = np.concatenate(dataset.labels, 0)[:, 3:5]  # wh from cxywh
-
-    # Kmeans calculation
-    k = cluster.vq.kmeans(wh, n)[0]
-    k = k[np.argsort(k.prod(1))]  # sort small to large
-
-    # Measure IoUs
-    iou = torch.stack(
-        [wh_iou(torch.Tensor(wh).T,
-                torch.Tensor(x).T) for x in k], 0)
-    biou = iou.max(0)[0]  # closest anchor IoU
-    print('Best possible recall: %.3f' %
-          (biou > 0.2635).float().mean())  # BPR (best possible recall)
-
-    # Print
-    print(
-        'kmeans anchors (n=%g, img_size=%g, IoU=%.2f/%.2f/%.2f-min/mean/best): '
-        % (n, img_size, biou.min(), iou.mean(), biou.mean()),
-        end='')
-    for i, x in enumerate(k):
-        print('%i,%i' % (round(x[0]), round(x[1])),
-              end=',  ' if i < len(k) - 1 else '\n')  # use in *.cfg
-
-    # Plot
-    # plt.hist(biou.numpy().ravel(), 100)
-
-
-def print_mutation(hyp, results, bucket=''):
-    # Print mutation results to evolve.txt (for use with train.py --evolve)
-    a = '%10s' * len(hyp) % tuple(hyp.keys())  # hyperparam keys
-    b = '%10.3g' * len(hyp) % tuple(hyp.values())  # hyperparam values
-    c = '%10.3g' * len(results) % results  # results (P, R, mAP, F1, test_loss)
-    print('\n%s\n%s\nEvolved fitness: %s\n' % (a, b, c))
-
-    if bucket:
-        os.system('gsutil cp gs://%s/evolve.txt .' %
-                  bucket)  # download evolve.txt
-
-    with open('evolve.txt', 'a') as f:  # append result
-        f.write(c + b + '\n')
-    x = np.unique(np.loadtxt('evolve.txt', ndmin=2),
-                  axis=0)  # load unique rows
-    np.savetxt('evolve.txt', x[np.argsort(-fitness(x))],
-               '%10.3g')  # save sort by fitness
-
-    if bucket:
-        os.system('gsutil cp evolve.txt gs://%s' % bucket)  # upload evolve.txt
-
-
 def apply_classifier(x, model, img, im0):
     # applies a second stage classifier to yolo outputs
 
@@ -795,11 +518,6 @@ def apply_classifier(x, model, img, im0):
     return x
 
 
-def fitness(x):
-    # Returns fitness (for use with results.txt or evolve.txt)
-    return x[:, 2] * 0.8 + x[:, 3] * 0.2  # weighted mAP and F1 combination
-
-
 # Plotting functions ---------------------------------------------------------------------------------------------------
 def plot_one_box(x, img, color=None, label=None, line_thickness=None):
     # Plots one bounding box on image img
@@ -819,26 +537,6 @@ def plot_one_box(x, img, color=None, label=None, line_thickness=None):
                     tl / 3, [225, 255, 255],
                     thickness=tf,
                     lineType=cv2.LINE_AA)
-
-
-def plot_wh_methods():  # from utils.utils import *; plot_wh_methods()
-    # Compares the two methods for width-height anchor multiplication
-    # https://github.com/ultralytics/yolov3/issues/168
-    x = np.arange(-4.0, 4.0, .1)
-    ya = np.exp(x)
-    yb = torch.sigmoid(torch.from_numpy(x)).numpy() * 2
-
-    fig = plt.figure(figsize=(6, 3), dpi=150)
-    plt.plot(x, ya, '.-', label='yolo method')
-    plt.plot(x, yb**2, '.-', label='^2 power method')
-    plt.plot(x, yb**2.5, '.-', label='^2.5 power method')
-    plt.xlim(left=-4, right=4)
-    plt.ylim(bottom=0, top=6)
-    plt.xlabel('input')
-    plt.ylabel('output')
-    plt.legend()
-    fig.tight_layout()
-    fig.savefig('comparison.png', dpi=200)
 
 
 def plot_images(imgs, targets, paths=None, fname='images.jpg'):
@@ -866,128 +564,3 @@ def plot_images(imgs, targets, paths=None, fname='images.jpg'):
     fig.tight_layout()
     fig.savefig(fname, dpi=200)
     plt.close()
-
-
-def plot_test_txt():  # from utils.utils import *; plot_test()
-    # Plot test.txt histograms
-    x = np.loadtxt('test.txt', dtype=np.float32)
-    box = xyxy2xywh(x[:, :4])
-    cx, cy = box[:, 0], box[:, 1]
-
-    fig, ax = plt.subplots(1, 1, figsize=(6, 6))
-    ax.hist2d(cx, cy, bins=600, cmax=10, cmin=0)
-    ax.set_aspect('equal')
-    fig.tight_layout()
-    plt.savefig('hist2d.jpg', dpi=300)
-
-    fig, ax = plt.subplots(1, 2, figsize=(12, 6))
-    ax[0].hist(cx, bins=600)
-    ax[1].hist(cy, bins=600)
-    fig.tight_layout()
-    plt.savefig('hist1d.jpg', dpi=200)
-
-
-def plot_targets_txt():  # from utils.utils import *; plot_targets_txt()
-    # Plot test.txt histograms
-    x = np.loadtxt('targets.txt', dtype=np.float32)
-    x = x.T
-
-    s = ['x targets', 'y targets', 'width targets', 'height targets']
-    fig, ax = plt.subplots(2, 2, figsize=(8, 8))
-    ax = ax.ravel()
-    for i in range(4):
-        ax[i].hist(x[i],
-                   bins=100,
-                   label='%.3g +/- %.3g' % (x[i].mean(), x[i].std()))
-        ax[i].legend()
-        ax[i].set_title(s[i])
-    fig.tight_layout()
-    plt.savefig('targets.jpg', dpi=200)
-
-
-def plot_evolution_results(
-        hyp):  # from utils.utils import *; plot_evolution_results(hyp)
-    # Plot hyperparameter evolution results in evolve.txt
-    x = np.loadtxt('evolve.txt', ndmin=2)
-    f = fitness(x)
-    weights = (f - f.min())**2  # for weighted results
-    fig = plt.figure(figsize=(12, 10))
-    matplotlib.rc('font', **{'size': 8})
-    for i, (k, v) in enumerate(hyp.items()):
-        y = x[:, i + 5]
-        # mu = (y * weights).sum() / weights.sum()  # best weighted result
-        mu = y[f.argmax()]  # best single result
-        plt.subplot(4, 5, i + 1)
-        plt.plot(mu, f.max(), 'o', markersize=10)
-        plt.plot(y, f, '.')
-        plt.title('%s = %.3g' % (k, mu),
-                  fontdict={'size': 9})  # limit to 40 characters
-        print('%15s: %.3g' % (k, mu))
-    fig.tight_layout()
-    plt.savefig('evolve.png', dpi=200)
-
-
-def plot_results(start=0, stop=0):  # from utils.utils import *; plot_results()
-    # Plot training results files 'results*.txt'
-    fig, ax = plt.subplots(2, 5, figsize=(14, 7))
-    ax = ax.ravel()
-    s = [
-        'GIoU', 'Objectness', 'Classification', 'Precision', 'Recall',
-        'val GIoU', 'val Objectness', 'val Classification', 'mAP', 'F1'
-    ]
-    for f in sorted(
-            glob.glob('results*.txt') +
-            glob.glob('../../Downloads/results*.txt')):
-        results = np.loadtxt(f,
-                             usecols=[2, 3, 4, 8, 9, 12, 13, 14, 10, 11],
-                             ndmin=2).T
-        n = results.shape[1]  # number of rows
-        x = range(start, min(stop, n) if stop else n)
-        for i in range(10):
-            y = results[i, x]
-            if i in [0, 1, 2, 5, 6, 7]:
-                y[y == 0] = np.nan  # dont show zero loss values
-            ax[i].plot(x, y, marker='.', label=f.replace('.txt', ''))
-            ax[i].set_title(s[i])
-            if i in [5, 6, 7]:  # share train and val loss y axes
-                ax[i].get_shared_y_axes().join(ax[i], ax[i - 5])
-
-    fig.tight_layout()
-    ax[1].legend()
-    fig.savefig('results.png', dpi=200)
-
-
-def plot_results_overlay(
-        start=0, stop=0):  # from utils.utils import *; plot_results_overlay()
-    # Plot training results files 'results*.txt', overlaying train and val losses
-    s = [
-        'train', 'train', 'train', 'Precision', 'mAP', 'val', 'val', 'val',
-        'Recall', 'F1'
-    ]  # legends
-    t = ['GIoU', 'Objectness', 'Classification', 'P-R', 'mAP-F1']  # titles
-    for f in sorted(
-            glob.glob('results*.txt') +
-            glob.glob('../../Downloads/results*.txt')):
-        results = np.loadtxt(f,
-                             usecols=[2, 3, 4, 8, 9, 12, 13, 14, 10, 11],
-                             ndmin=2).T
-        n = results.shape[1]  # number of rows
-        x = range(start, min(stop, n) if stop else n)
-        fig, ax = plt.subplots(1, 5, figsize=(14, 3.5))
-        ax = ax.ravel()
-        for i in range(5):
-            for j in [i, i + 5]:
-                y = results[j, x]
-                if i in [0, 1, 2]:
-                    y[y == 0] = np.nan  # dont show zero loss values
-                ax[i].plot(x, y, marker='.', label=s[j])
-            ax[i].set_title(t[i])
-            ax[i].legend()
-            ax[i].set_ylabel(f) if i == 0 else None  # add filename
-        fig.tight_layout()
-        fig.savefig(f.replace('.txt', '.png'), dpi=200)
-
-
-def version_to_tuple(version):
-    # Used to compare versions of library
-    return tuple(map(int, (version.split("."))))
