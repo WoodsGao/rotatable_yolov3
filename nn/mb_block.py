@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from . import Swish, CNS, SELayer, EmptyLayer
-from torchvision.models import resnet101
 
 
 class MbBlock(nn.Module):
@@ -12,18 +11,19 @@ class MbBlock(nn.Module):
                  out_channels,
                  ksize=3,
                  stride=1,
+                 dilation=1,
                  expand_ratio=6,
                  drop_rate=0.2,
                  reps=1):
         super(MbBlock, self).__init__()
         blocks = [
-            MbConv(in_channels, out_channels, ksize, stride, expand_ratio,
-                   drop_rate)
+            MbConv(in_channels, out_channels, ksize, stride, dilation,
+                   expand_ratio, drop_rate)
         ]
         for i in range(reps - 1):
             blocks.append(
-                MbConv(out_channels, out_channels, ksize, 1, expand_ratio,
-                       drop_rate))
+                MbConv(out_channels, out_channels, ksize, 1, dilation,
+                       expand_ratio, drop_rate))
         self.blocks = nn.Sequential(*blocks)
 
     def forward(self, x):
@@ -36,6 +36,7 @@ class MbConv(nn.Module):
                  out_channels,
                  ksize=3,
                  stride=1,
+                 dilation=1,
                  expand_ratio=6,
                  drop_rate=0.2):
         super(MbConv, self).__init__()
@@ -52,7 +53,8 @@ class MbConv(nn.Module):
                 mid_channels,
                 ksize=ksize,
                 stride=stride,
-                groups=mid_channels),
+                groups=mid_channels,
+                dilation=dilation),
             SELayer(mid_channels),
             # See https://arxiv.org/pdf/1604.04112.pdf
             CNS(mid_channels, out_channels, 1, activate=False),

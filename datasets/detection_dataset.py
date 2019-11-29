@@ -95,6 +95,11 @@ class DetectionDataset(BasicDataset):
         for i, l in enumerate(dets):
             l[:, 0] = i  # add target image index for build_targets()
         imgs = torch.stack(imgs, 0)
+        return imgs, torch.cat(dets, 0), path, hw
+
+    @staticmethod
+    def post_fetch_fn(batch):
+        imgs, dets, path, hw = batch
         imgs = imgs.float()
         imgs /= 255.
-        return imgs, torch.cat(dets, 0), path, hw
+        return imgs, dets, path, hw

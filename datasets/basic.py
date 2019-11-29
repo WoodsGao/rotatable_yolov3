@@ -1,13 +1,12 @@
 import torch
-from torch.multiprocessing import Process, Queue
-import random
 from tqdm import tqdm
 import os
 import lmdb
 import pickle
 import base64
 import time
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from threading import Thread
+from concurrent.futures import ThreadPoolExecutor
 
 
 class BasicDataset(torch.utils.data.Dataset):
@@ -27,9 +26,9 @@ class BasicDataset(torch.utils.data.Dataset):
             os.path.abspath(path).encode('utf-8')).decode('utf-8')
         if not skip_init:
             self.init_db()
-        if len(augments):
-            p = Process(target=self.worker)
-            p.start()
+            if len(augments) > 0:
+                p = Thread(target=self.worker, daemon=True)
+                p.start()
 
     def init_db(self):
         # init
