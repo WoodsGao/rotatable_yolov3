@@ -16,7 +16,7 @@ class SeparableConv2d(nn.Module):
                 in_channels,
                 ksize,
                 stride,
-                (ksize - 1) // 2 - 1 + dilation,
+                (ksize - 1) // 2 * dilation,
                 dilation,
                 in_channels,
                 bias,
