@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from . import Swish
+from . import Swish, SeparableConv2d
 
 
 class EmptyLayer(nn.Module):
@@ -64,6 +64,41 @@ class CNS(nn.Module):
                               groups=groups,
                               dilation=dilation,
                               bias=False)
+        # if out_channels % 32 == 0:
+        #     self.norm = nn.GroupNorm(32, out_channels)
+        # elif out_channels % 8 == 0:
+        #     self.norm = nn.GroupNorm(8, out_channels)
+        # else:
+        #     self.norm = EmptyLayer()
+        self.norm = nn.BatchNorm2d(out_channels)
+        if activate:
+            self.activation = Swish()
+        else:
+            self.activation = EmptyLayer()
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.norm(x)
+        x = self.activation(x)
+        return x
+
+
+# conv norm swish
+class SeparableCNS(nn.Module):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 ksize=3,
+                 stride=1,
+                 dilation=1,
+                 activate=True):
+        super(CNS, self).__init__()
+        self.conv = SeparableConv2d(in_channels,
+                                    out_channels,
+                                    ksize,
+                                    stride=stride,
+                                    dilation=dilation,
+                                    bias=False)
         # if out_channels % 32 == 0:
         #     self.norm = nn.GroupNorm(32, out_channels)
         # elif out_channels % 8 == 0:
