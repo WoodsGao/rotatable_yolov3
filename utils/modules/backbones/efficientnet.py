@@ -53,6 +53,7 @@ class EfficientNet(BasicModel):
                     drop_rate=drop_ratio),
         )
         self.width = width
+        self.out_channels = [width[1], width[2], width[3], width[5], width[7]]
         self.depth = depth
         self.drop_ratio = drop_ratio
-        self.img_size = int(7 * 1.15 ** model_id) * 32
+        self.img_size = int(7 * 1.15**model_id) * 32

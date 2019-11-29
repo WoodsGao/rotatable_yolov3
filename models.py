@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from utils.modules.nn import CNS, Swish, MbBlock
+from utils.modules.nn import CNS, Swish, MbBlock, FPN, SeparableCNS
 from utils.modules.backbones import BasicModel, EfficientNet
 import math
 
@@ -91,88 +91,94 @@ class YOLOLayer(nn.Module):
 class YOLOV3(BasicModel):
     # YOLOv3 object detection model
 
-    def __init__(self,
-                 num_classes,
-                 img_size=(416, 416),
-                 anchors=[[[10, 13], [16, 30], [33, 23]],
-                          [[30, 61], [62, 45], [59, 119]],
-                          [[116, 90], [156, 198], [373, 326]]]):
+    def __init__(self, num_classes):
         super(YOLOV3, self).__init__()
-        self.backbone = EfficientNet()
-        self.high_final = nn.Conv2d(352,
-                                    len(anchors[-1]) * (5 + num_classes),
-                                    3,
-                                    padding=1)
-        self.high_yolo = YOLOLayer(
-            anchors=np.float32(anchors[-1]),  # anchor list
-            nc=num_classes,  # number of classes
-            img_size=img_size,  # (416, 416)
-            yolo_index=0,  # 0, 1 or 2
-        )  # yolo architecture
-
-        self.middle_conv = nn.Sequential(CNS(480, 192, 1),
-                                         MbBlock(192, 192, reps=6))
-        self.middle_final = nn.Conv2d(192,
-                                      len(anchors[-2]) * (5 + num_classes),
-                                      3,
-                                      padding=1)
-        self.middle_yolo = YOLOLayer(
-            anchors=np.float32(anchors[-2]),  # anchor list
-            nc=num_classes,  # number of classes
-            img_size=img_size,  # (416, 416)
-            yolo_index=1,  # 0, 1 or 2
-        )  # yolo architecture
-
-        self.low_conv = nn.Sequential(CNS(240, 128, 1),
-                                      MbBlock(128, 128, reps=6))
-        self.low_final = nn.Conv2d(128,
-                                   len(anchors[-3]) * (5 + num_classes), 1)
-        self.low_yolo = YOLOLayer(
-            anchors=np.float32(anchors[-3]),  # anchor list
-            nc=num_classes,  # number of classes
-            img_size=img_size,  # (416, 416)
-            yolo_index=2,  # 0, 1 or 2
-        )  # yolo architecture
-
-        self.yolo_layers = nn.ModuleList(
-            [self.high_yolo, self.middle_yolo, self.low_yolo])
+        default_anchors = np.float32([[1, 1], [0.5, 0.5], [2, 2], [1, 2],
+                                      [2, 1], [0.5, 1], [1, 0.5], [0.5, 2],
+                                      [2, 0.5]])
+        model_id = 2
+        self.backbone = EfficientNet(model_id)
+        img_size = 512 + 128 * model_id
+        width = [416, 512, 608, 704]
+        width = [int(w * (1.1**model_id) / 8) * 8 for w in width]
+        self.backbone.width += width
+        self.backbone.out_channels += [width[1], width[3]]
+        depth = [5, 1, 6, 1]
+        depth = [int(d * (1.2**model_id)) for d in depth]
+        self.backbone.depth += depth
+        self.backbone.block6 = nn.Sequential(
+            MbBlock(self.backbone.width[7],
+                    self.backbone.width[8],
+                    5,
+                    stride=2,
+                    reps=self.backbone.depth[7],
+                    drop_rate=self.backbone.drop_ratio),
+            MbBlock(self.backbone.width[8],
+                    self.backbone.width[9],
+                    3,
+                    reps=self.backbone.depth[8],
+                    drop_rate=self.backbone.drop_ratio),
+        )
+        self.backbone.block7 = nn.Sequential(
+            MbBlock(self.backbone.width[9],
+                    self.backbone.width[10],
+                    5,
+                    stride=2,
+                    reps=self.backbone.depth[9],
+                    drop_rate=self.backbone.drop_ratio),
+            MbBlock(self.backbone.width[10],
+                    self.backbone.width[11],
+                    3,
+                    reps=self.backbone.depth[10],
+                    drop_rate=self.backbone.drop_ratio),
+        )
+        width = int(64 * (1.35**model_id))
+        self.fpn = FPN(self.backbone.out_channels[-7:], width, 2 + model_id)
+        bbox_conv = []
+        for i in range(3 + model_id // 3):
+            bbox_conv.append(SeparableCNS(width, width))
+        bbox_conv.append(nn.Conv2d(width, len(default_anchors) * 4))
+        self.bbox_conv = nn.Sequential(bbox_conv)
+        cls_conv = []
+        for i in range(3 + model_id // 3):
+            cls_conv.append(SeparableCNS(width, width))
+        cls_conv.append(
+            nn.Conv2d(width,
+                      len(default_anchors) * (num_classes + 1)))
+        self.cls_conv = nn.Sequential(cls_conv)
+        yolo_layers = []
+        for i in range(3, 8):
+            yolo_layers.append(
+                YOLOLayer(
+                    anchors=img_size / (2**i) * default_anchors,
+                    nc=num_classes,
+                    img_size=img_size,
+                    yolo_index=i - 3,
+                ))
+        self.yolo_layers = nn.ModuleList(yolo_layers)
         self.init()
 
     def forward(self, x, var=None):
         img_size = x.shape[-2:]
         output = []
+        features = []
         x = self.backbone.block1(x)
         x = self.backbone.block2(x)
         x = self.backbone.block3(x)
-        low = x
+        features.append(x)
         x = self.backbone.block4(x)
-        middle = x
+        features.append(x)
         x = self.backbone.block5(x)
-        high = x
-        high_output = self.high_final(high)
-        high_output = self.high_yolo(high_output, img_size)
-        output.append(high_output)
-
-        high = F.interpolate(high,
-                             scale_factor=2,
-                             mode='bilinear',
-                             align_corners=True)
-        middle = torch.cat([high, middle], 1)
-        middle = self.middle_conv(middle)
-        middle_output = self.middle_final(middle)
-        middle_output = self.middle_yolo(middle_output, img_size)
-        output.append(middle_output)
-
-        middle = F.interpolate(middle,
-                               scale_factor=2,
-                               mode='bilinear',
-                               align_corners=True)
-        low = torch.cat([middle, low], 1)
-        low = self.low_conv(low)
-        low_output = self.low_final(low)
-        low_output = self.low_yolo(low_output, img_size)
-        output.append(low_output)
-
+        features.append(x)
+        x = self.backbone.block6(x)
+        features.append(x)
+        x = self.backbone.block7(x)
+        features.append(x)
+        features = self.fpn(features)
+        for fi, feature in enumerate(features):
+            print(feature.size())
+            feature = torch.cat([self.bbox])
+            output.append(self.yolo_layers[fi](feature, img_size))
         if self.training:
             return output
         elif ONNX_EXPORT:
@@ -210,7 +216,7 @@ def create_grids(self,
 
 if __name__ == '__main__':
     model = YOLOV3(80)
-    a = torch.rand([4, 3, 416, 416])
+    a = torch.rand([4, 3, 256, 256])
     b = model(a)
     print(b[0].shape)
     b[0].mean().backward()
