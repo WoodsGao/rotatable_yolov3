@@ -40,8 +40,8 @@ class ClassificationDataset(BasicDataset):
         return torch.ByteTensor(img), self.data[idx][1]
 
     @staticmethod
-    def collate_fn(batch):
-        imgs, labels = default_collate(batch)
+    def post_fetch_fn(batch):
+        imgs, labels = batch
         imgs = imgs.float()
         imgs /= 255.
         return (imgs, labels)
