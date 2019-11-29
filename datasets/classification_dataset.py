@@ -1,5 +1,6 @@
 from . import BasicDataset
 from ..augments import augments_parser
+from ..utils import IMG_EXT
 import torch
 import numpy as np
 import os
@@ -24,7 +25,7 @@ class ClassificationDataset(BasicDataset):
                 name,
                 self.classes.index(os.path.basename(os.path.dirname(name)))
             ] for name in names
-            if os.path.splitext(name)[1] in ['.jpg', '.jpeg', '.png', '.tiff']
+            if os.path.splitext(name)[1] in IMG_EXT
         ]
 
     def get_item(self, idx):

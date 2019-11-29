@@ -4,6 +4,7 @@ import os
 import torch
 from . import BasicDataset
 from ..augments import augments_parser
+from ..utils import IMG_EXT
 
 
 class DetectionDataset(BasicDataset):
@@ -17,7 +18,7 @@ class DetectionDataset(BasicDataset):
             names = [n for n in f.read().split('\n') if n]
         names = [
             name for name in names
-            if os.path.splitext(name)[1] in ['.jpg', '.jpeg', '.png', '.tiff']
+            if os.path.splitext(name)[1] in IMG_EXT
         ]
         for name in names:
             bboxes = []
