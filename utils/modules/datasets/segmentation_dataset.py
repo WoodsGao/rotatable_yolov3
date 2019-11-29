@@ -4,8 +4,8 @@ import os
 import torch
 from . import BasicDataset
 from ..augments import augments_parser
+from ..utils import IMG_EXT
 import torch.nn.functional as F
-from torch.utils.data.dataloader import default_collate
 
 
 def voc_colormap(N=256):
@@ -45,7 +45,7 @@ class SegmentationDataset(BasicDataset):
                 os.path.join(label_dir,
                              os.path.splitext(name)[0] + '.png')
             ] for name in names
-            if os.path.splitext(name)[1] in ['.jpg', '.jpeg', '.png', '.tiff']
+            if os.path.splitext(name)[1] in IMG_EXT
         ]
 
     def get_item(self, idx):
