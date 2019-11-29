@@ -10,9 +10,7 @@ class DetectionDataset(BasicDataset):
     def build_data(self):
         data_dir = os.path.dirname(self.path)
         with open(os.path.join(data_dir, 'classes.names'), 'r') as f:
-            lines = [l.split(',') for l in f.readlines()]
-            lines = [[l[0], np.uint8(l[1:])] for l in lines if len(l) == 4]
-        self.classes = lines
+            self.classes = f.readlines()
         image_dir = os.path.join(data_dir, 'images')
         label_dir = os.path.join(data_dir, 'labels')
         with open(self.path, 'r') as f:
@@ -50,7 +48,6 @@ class DetectionDataset(BasicDataset):
                         continue
                     bboxes.append(
                         [c, xmin, ymin, xmax, ymax, xmin, ymax, xmax, ymin])
-
             self.data.append([os.path.join(image_dir, name), bboxes])
 
     def get_item(self, idx):
@@ -87,19 +84,19 @@ class DetectionDataset(BasicDataset):
         img = img.transpose(2, 0, 1)
         img = np.ascontiguousarray(img)
         img = np.uint8(img)
-        return torch.ByteTensor(img), torch.FloatTensor(bboxes), self.data[idx][0], (h, w)
+        return torch.ByteTensor(img), torch.FloatTensor(bboxes)
 
     @staticmethod
     def collate_fn(batch):
-        imgs, dets, path, hw = list(zip(*batch))  # transposed
+        imgs, dets = list(zip(*batch))  # transposed
         for i, l in enumerate(dets):
             l[:, 0] = i  # add target image index for build_targets()
         imgs = torch.stack(imgs, 0)
-        return imgs, torch.cat(dets, 0), path, hw
+        return imgs, torch.cat(dets, 0)
 
     @staticmethod
     def post_fetch_fn(batch):
-        imgs, dets, path, hw = batch
+        imgs, dets = batch
         imgs = imgs.float()
         imgs /= 255.
-        return imgs, dets, path, hw
+        return imgs, dets
