@@ -9,3 +9,4 @@ from .xblock import XBlock
 from .dense_block import DenseBlock
 from .mb_block import MbConv, MbBlock
 from .fpn import FPN
+from .bifpn import BiFPN

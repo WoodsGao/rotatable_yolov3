@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from utils.modules.nn import CNS, Swish, MbBlock, FPN, SeparableCNS
+from utils.modules.nn import CNS, Swish, MbBlock, FPN, SeparableCNS, BiFPN
 from utils.modules.backbones import BasicModel, EfficientNet
 import math
 
@@ -27,17 +27,20 @@ class YOLOLayer(nn.Module):
             ny = int(img_size[0] / stride)  # number y grid points
             create_grids(self, img_size, (nx, ny))
 
-    def forward(self, p, img_size, var=None):
+    def forward(self, bbox_feature, cls_feature, img_size, var=None):
         if ONNX_EXPORT:
             bs = 1  # batch size
         else:
-            bs, ny, nx = p.shape[0], p.shape[-2], p.shape[-1]
+            bs, ny, nx = bbox_feature.shape[0], bbox_feature.shape[-2], bbox_feature.shape[-1]
             if (self.nx, self.ny) != (nx, ny):
-                create_grids(self, img_size, (nx, ny), p.device, p.dtype)
+                create_grids(self, img_size, (nx, ny), bbox_feature.device, bbox_feature.dtype)
+
+        bbox_feature = bbox_feature.view(bs, self.na, 4, self.ny, self.nx)
+        cls_feature = cls_feature.view(bs, self.na, self.nc+1, self.ny, self.nx)
+        p = torch.cat([bbox_feature, cls_feature], 2)
 
         # p.view(bs, 255, 13, 13) -- > (bs, 3, 13, 13, 85)  # (bs, anchors, grid, grid, classes + xywh)
-        p = p.view(bs, self.na, self.nc + 5, self.ny,
-                   self.nx).permute(0, 1, 3, 4, 2).contiguous()  # prediction
+        p = p.permute(0, 1, 3, 4, 2).contiguous()  # prediction
 
         if self.training:
             return p
@@ -132,20 +135,20 @@ class YOLOV3(BasicModel):
                     reps=self.backbone.depth[10],
                     drop_rate=self.backbone.drop_ratio),
         )
-        width = int(64 * (1.35**model_id))
-        self.fpn = FPN(self.backbone.out_channels[-7:], width, 2 + model_id)
+        width = int(8 * (1.35**model_id)) * 8
+        self.fpn = BiFPN(self.backbone.out_channels[2:], width, 2 + model_id)
         bbox_conv = []
         for i in range(3 + model_id // 3):
             bbox_conv.append(SeparableCNS(width, width))
-        bbox_conv.append(nn.Conv2d(width, len(default_anchors) * 4))
-        self.bbox_conv = nn.Sequential(bbox_conv)
+        bbox_conv.append(nn.Conv2d(width, len(default_anchors) * 4, 1))
+        self.bbox_conv = nn.Sequential(*bbox_conv)
         cls_conv = []
         for i in range(3 + model_id // 3):
             cls_conv.append(SeparableCNS(width, width))
         cls_conv.append(
             nn.Conv2d(width,
-                      len(default_anchors) * (num_classes + 1)))
-        self.cls_conv = nn.Sequential(cls_conv)
+                      len(default_anchors) * (num_classes + 1), 1))
+        self.cls_conv = nn.Sequential(*cls_conv)
         yolo_layers = []
         for i in range(3, 8):
             yolo_layers.append(
@@ -157,8 +160,10 @@ class YOLOV3(BasicModel):
                 ))
         self.yolo_layers = nn.ModuleList(yolo_layers)
         self.init()
+        self.num_classes = num_classes
+        self.num_anchors = len(default_anchors)
 
-    def forward(self, x, var=None):
+    def forward(self, x):
         img_size = x.shape[-2:]
         output = []
         features = []
@@ -174,18 +179,27 @@ class YOLOV3(BasicModel):
         features.append(x)
         x = self.backbone.block7(x)
         features.append(x)
+        print([f.size() for f in features])
         features = self.fpn(features)
         for fi, feature in enumerate(features):
-            print(feature.size())
-            feature = torch.cat([self.bbox])
-            output.append(self.yolo_layers[fi](feature, img_size))
+            bbox_feature = self.bbox_conv(feature)
+            cls_feature = self.cls_conv(feature)
+            # feature = torch.cat([
+            #     torch.cat([
+            #         bbox_feature[:, ai * 4:ai * 4 + 4],
+            #         cls_feature[:, ai * (self.num_classes + 1):ai *
+            #                     (self.num_classes + 1) +
+            #                     (self.num_classes + 1)]
+            #     ], 1) for ai in range(self.num_anchors)
+            # ], 1)
+            output.append(self.yolo_layers[fi](bbox_feature, cls_feature, img_size))
         if self.training:
             return output
         elif ONNX_EXPORT:
             output = torch.cat(
-                output, 1)  # cat 3 layers 85 x (507, 2028, 8112) to 85 x 10647
-            nc = self.module_list[self.yolo_layers[0]].nc  # number of classes
-            return output[5:5 + nc].t(), output[:4].t()  # ONNX scores, boxes
+                output, 1)  # cat 3 layers 85 x (507, 2028, 8112) to 85 x 1064
+            return output[5:5 + self.num_classes].t(), output[:4].t(
+            )  # ONNX scores, boxes
         else:
             io, p = list(zip(*output))  # inference output, training output
             return torch.cat(io, 1), p
@@ -216,7 +230,7 @@ def create_grids(self,
 
 if __name__ == '__main__':
     model = YOLOV3(80)
-    a = torch.rand([4, 3, 256, 256])
+    a = torch.rand([4, 3, 128, 128])
     b = model(a)
     print(b[0].shape)
     b[0].mean().backward()

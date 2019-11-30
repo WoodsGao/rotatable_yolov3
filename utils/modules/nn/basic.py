@@ -92,7 +92,7 @@ class SeparableCNS(nn.Module):
                  stride=1,
                  dilation=1,
                  activate=True):
-        super(CNS, self).__init__()
+        super(SeparableCNS, self).__init__()
         self.conv = SeparableConv2d(in_channels,
                                     out_channels,
                                     ksize,

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from . import SeparableConv2d
+from . import SeparableCNS
 
 
 class FPN(nn.Module):
@@ -20,28 +20,29 @@ class FPN(nn.Module):
         fpn_stage = []
         for idx, channels in enumerate(channels_list[::-1]):
             if idx == 0:
-                fpn_stage.append(SeparableConv2d(channels, out_channels))
+                fpn_stage.append(SeparableCNS(channels, out_channels))
             else:
                 fpn_stage.append(
-                    SeparableConv2d(channels + out_channels, out_channels))
-        fpn_stage = nn.ModuleList(fpn_stage)
-        self.fpn_list = [fpn_stage]
+                    SeparableCNS(channels + out_channels, out_channels))
+        fpn_stage = nn.ModuleList(fpn_stage[::-1])
+        fpn_list = [fpn_stage]
         for i in range(reps - 1):
             fpn_stage = []
             for idx, channels in enumerate(channels_list[::-1]):
                 if idx == 0:
                     fpn_stage.append(
-                        SeparableConv2d(out_channels, out_channels))
+                        SeparableCNS(out_channels, out_channels))
                 else:
                     fpn_stage.append(
-                        SeparableConv2d(2 * out_channels, out_channels))
-            fpn_stage = nn.ModuleList(fpn_stage)
-            self.fpn_list.append(fpn_stage)
+                        SeparableCNS(2 * out_channels, out_channels))
+            fpn_stage = nn.ModuleList(fpn_stage[::-1])
+            fpn_list.append(fpn_stage)
+        self.fpn_list = nn.ModuleList(fpn_list)
 
     def forward(self, features):
         for fpn in self.fpn_list:
             new_features = []
-            for idx, feature in enumerate(features[::-1]):
+            for idx, (feature, stage) in enumerate(zip(features[::-1], fpn[::-1])):
                 if idx > 0:
                     last_feature = new_features[-1]
                     last_feature = F.interpolate(last_feature,
@@ -49,7 +50,7 @@ class FPN(nn.Module):
                                                  mode='bilinear',
                                                  align_corners=True)
                     feature = torch.cat([last_feature, feature], 1)
-                feature = fpn[idx](feature)
+                feature = stage(feature)
                 new_features.append(feature)
             features = new_features[::-1]
         return features
