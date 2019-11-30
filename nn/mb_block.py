@@ -16,13 +16,10 @@ class MbBlock(nn.Module):
                  drop_rate=0.2,
                  reps=1):
         super(MbBlock, self).__init__()
-        blocks = [
-            MbConv(in_channels, out_channels, ksize, stride, dilation,
-                   expand_ratio, drop_rate)
-        ]
-        for i in range(reps - 1):
+        blocks = []
+        for i in range(reps):
             blocks.append(
-                MbConv(out_channels, out_channels, ksize, 1, dilation,
+                MbConv(in_channels if i == 0 else out_channels, out_channels, ksize, stride if i == 0 else 1, dilation,
                        expand_ratio, drop_rate))
         self.blocks = nn.Sequential(*blocks)
 
