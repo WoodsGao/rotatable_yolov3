@@ -27,15 +27,17 @@ class YOLOLayer(nn.Module):
             ny = int(img_size[0] / stride)  # number y grid points
             create_grids(self, img_size, (nx, ny))
 
-    def forward(self, p, img_size, var=None):
+    def forward(self, bbox_feature, cls_feature, img_size, var=None):
         if ONNX_EXPORT:
             bs = 1  # batch size
         else:
-            bs, ny, nx = p.shape[0], p.shape[-2], p.shape[-1]
+            bs, ny, nx = bbox_feature.shape[0], bbox_feature.shape[-2], bbox_feature.shape[-1]
             if (self.nx, self.ny) != (nx, ny):
-                create_grids(self, img_size, (nx, ny), p.device, p.dtype)
+                create_grids(self, img_size, (nx, ny), bbox_feature.device, bbox_feature.dtype)
 
-        p = p.view(bs, self.na, 5 + self.nc, self.ny, self.nx)
+        bbox_feature = bbox_feature.view(bs, self.na, 4, self.ny, self.nx)
+        cls_feature = cls_feature.view(bs, self.na, 1 + self.nc, self.ny, self.nx)
+        p = torch.cat([bbox_feature, cls_feature], 2)
 
         # p.view(bs, 255, 13, 13) -- > (bs, 3, 13, 13, 85)  # (bs, anchors, grid, grid, classes + xywh)
         p = p.permute(0, 1, 3, 4, 2).contiguous()  # prediction
@@ -136,13 +138,17 @@ class YOLOV3(BasicModel):
         )
         width = int(8 * (1.35**model_id)) * 8
         self.fpn = BiFPN(self.backbone.out_channels[2:], width, 2 + model_id)
-        final_conv = []
+        bbox_conv = []
+        cls_conv = []
         for i in range(3 + model_id // 3):
-            final_conv.append(SeparableCNS(width, width))
-        final_conv.append(
+            bbox_conv.append(SeparableCNS(width, width))
+            cls_conv.append(SeparableCNS(width, width))
+        bbox_conv.append(nn.Conv2d(width, len(default_anchors) * 4, 1))
+        cls_conv.append(
             nn.Conv2d(width,
-                      len(default_anchors) * (5 + num_classes), 1))
-        self.final_conv = nn.Sequential(*final_conv)
+                      len(default_anchors) * (1 + num_classes), 1))
+        self.bbox_conv = nn.Sequential(*bbox_conv)
+        self.cls_conv = nn.Sequential(*cls_conv)
         yolo_layers = []
         for i in range(3, 8):
             yolo_layers.append(
@@ -175,16 +181,10 @@ class YOLOV3(BasicModel):
         features.append(x)
         features = self.fpn(features)
         for fi, feature in enumerate(features):
-            feature = self.final_conv(feature)
-            # feature = torch.cat([
-            #     torch.cat([
-            #         bbox_feature[:, ai * 4:ai * 4 + 4],
-            #         cls_feature[:, ai * (self.num_classes + 1):ai *
-            #                     (self.num_classes + 1) +
-            #                     (self.num_classes + 1)]
-            #     ], 1) for ai in range(self.num_anchors)
-            # ], 1)
-            output.append(self.yolo_layers[fi](feature, img_size))
+            bbox_feature = self.bbox_conv(feature)
+            cls_feature = self.cls_conv(feature)
+            output.append(self.yolo_layers[fi](bbox_feature, cls_feature,
+                                               img_size))
         if self.training:
             return output
         elif ONNX_EXPORT:
