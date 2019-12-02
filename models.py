@@ -31,13 +31,11 @@ class YOLOLayer(nn.Module):
         if ONNX_EXPORT:
             bs = 1  # batch size
         else:
-            bs, ny, nx = p.shape[0], p.shape[
-                -2], p.shape[-1]
+            bs, ny, nx = p.shape[0], p.shape[-2], p.shape[-1]
             if (self.nx, self.ny) != (nx, ny):
-                create_grids(self, img_size, (nx, ny), p.device,
-                             p.dtype)
+                create_grids(self, img_size, (nx, ny), p.device, p.dtype)
 
-        p = p.view(bs, self.na, 5+self.nc, self.ny, self.nx)
+        p = p.view(bs, self.na, 5 + self.nc, self.ny, self.nx)
 
         # p.view(bs, 255, 13, 13) -- > (bs, 3, 13, 13, 85)  # (bs, anchors, grid, grid, classes + xywh)
         p = p.permute(0, 1, 3, 4, 2).contiguous()  # prediction
@@ -96,7 +94,7 @@ class YOLOV3(BasicModel):
 
     def __init__(self, num_classes, img_size=512):
         super(YOLOV3, self).__init__()
-        ratios = np.float32([0.5, 1, 2])
+        ratios = np.float32([1, 2, 3, 1 / 2, 1 / 3])
         ratios = np.sqrt(ratios)
         w_ratios = ratios
         h_ratios = 1 / ratios
@@ -141,7 +139,9 @@ class YOLOV3(BasicModel):
         final_conv = []
         for i in range(3 + model_id // 3):
             final_conv.append(SeparableCNS(width, width))
-        final_conv.append(nn.Conv2d(width, len(default_anchors) * (5 + num_classes), 1))
+        final_conv.append(
+            nn.Conv2d(width,
+                      len(default_anchors) * (5 + num_classes), 1))
         self.final_conv = nn.Sequential(*final_conv)
         yolo_layers = []
         for i in range(3, 8):
@@ -184,8 +184,7 @@ class YOLOV3(BasicModel):
             #                     (self.num_classes + 1)]
             #     ], 1) for ai in range(self.num_anchors)
             # ], 1)
-            output.append(self.yolo_layers[fi](feature,
-                                               img_size))
+            output.append(self.yolo_layers[fi](feature, img_size))
         if self.training:
             return output
         elif ONNX_EXPORT:
