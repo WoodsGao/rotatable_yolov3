@@ -2,14 +2,14 @@ import random
 from pathlib import Path
 import torch.distributed as dist
 import cv2
-import matplotlib
-import matplotlib.pyplot as plt
+#import matplotlib
+#import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
 from tqdm import tqdm
 
-matplotlib.rc('font', **{'size': 11})
+#matplotlib.rc('font', **{'size': 11})
 
 
 def init_seeds(seed=0):
@@ -137,7 +137,7 @@ def ap_per_class(tp, conf, pred_cls, target_cls):
             tpc = (tp[i]).cumsum()
 
             # Recall
-            recall = tpc / (n_gt + 1e-16)  # recall curve
+            recall = tpc / (n_gt + 1e-5)  # recall curve
             r.append(recall[-1])
 
             # Precision
@@ -159,7 +159,7 @@ def ap_per_class(tp, conf, pred_cls, target_cls):
 
     # Compute F1 score (harmonic mean of precision and recall)
     p, r, ap = np.array(p), np.array(r), np.array(ap)
-    f1 = 2 * p * r / (p + r + 1e-16)
+    f1 = 2 * p * r / (p + r + 1e-5)
 
     return p, r, ap, f1, unique_classes.astype('int32')
 
@@ -216,14 +216,14 @@ def bbox_iou(box1, box2, x1y1x2y2=True, GIoU=False):
                  (torch.min(b1_y2, b2_y2) - torch.max(b1_y1, b2_y1)).clamp(0)
 
     # Union Area
-    union_area = ((b1_x2 - b1_x1) * (b1_y2 - b1_y1) + 1e-16) + \
+    union_area = ((b1_x2 - b1_x1) * (b1_y2 - b1_y1) + 1e-5) + \
                  (b2_x2 - b2_x1) * (b2_y2 - b2_y1) - inter_area
 
     iou = inter_area / union_area  # iou
     if GIoU:  # Generalized IoU https://arxiv.org/pdf/1902.09630.pdf
         c_x1, c_x2 = torch.min(b1_x1, b2_x1), torch.max(b1_x2, b2_x2)
         c_y1, c_y2 = torch.min(b1_y1, b2_y1), torch.max(b1_y2, b2_y2)
-        c_area = (c_x2 - c_x1) * (c_y2 - c_y1) + 1e-16  # convex area
+        c_area = (c_x2 - c_x1) * (c_y2 - c_y1) + 1e-5  # convex area
         return iou - (c_area - union_area) / c_area  # GIoU
 
     return iou
@@ -241,7 +241,7 @@ def wh_iou(box1, box2):
     inter_area = torch.min(w1, w2) * torch.min(h1, h2)
 
     # Union Area
-    union_area = (w1 * h1 + 1e-16) + w2 * h2 - inter_area
+    union_area = (w1 * h1 + 1e-5) + w2 * h2 - inter_area
 
     return inter_area / union_area  # iou
 

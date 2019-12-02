@@ -1,8 +1,9 @@
 import argparse
 import torch
+import numpy as np
 from tqdm import tqdm
 from models import YOLOV3
-from utils.utils import ComputeLoss, non_max_suppression, clip_coords, xywh2xyxy, bbox_iou
+from utils.utils import ComputeLoss, non_max_suppression, clip_coords, xywh2xyxy, bbox_iou, ap_per_class
 
 
 def test(model, fetcher, conf_thres=1e-3, nms_thres=0.5):
@@ -84,7 +85,7 @@ def test(model, fetcher, conf_thres=1e-3, nms_thres=0.5):
                         iou, bi = bbox_iou(pbox, tbox[m]).max(0)
 
                         # If iou > threshold and class is correct mark as correct
-                        if iou > iou_thres and m[
+                        if iou > 0.28 and m[
                                 bi] not in detected:  # and pcls == tcls[bi]:
                             correct[i] = 1
                             detected.append(m[bi])

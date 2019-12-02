@@ -1,4 +1,5 @@
 import torch.nn as nn
+from . import WSConv2d, Swish, AdaGroupNorm
 
 
 class SeparableConv2d(nn.Module):
@@ -21,7 +22,7 @@ class SeparableConv2d(nn.Module):
                 in_channels,
                 bias,
             ),
-            nn.BatchNorm2d(in_channels),
+            AdaGroupNorm(in_channels),
             nn.Conv2d(in_channels, out_channels, 1, bias=bias),
         )
 

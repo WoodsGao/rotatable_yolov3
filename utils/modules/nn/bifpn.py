@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from . import SeparableCNS
+from . import SeparableCNS, CNS
+from ..utils import device
 
 
 class BiFPN(nn.Module):
@@ -18,10 +19,14 @@ class BiFPN(nn.Module):
         """
         super(BiFPN, self).__init__()
         assert reps > 0
-        self.td_weights = torch.ones([reps, len(channels_list), 2],
-                                     requires_grad=True)
-        self.out_weights = torch.ones([reps, len(channels_list), 3],
-                                      requires_grad=True)
+        self.td_weights = nn.Parameter(
+            torch.ones([reps, len(channels_list), 2]))
+        self.out_weights = nn.Parameter(
+            torch.ones([reps, len(channels_list), 3]))
+        first_conv = []
+        for idx, channels in enumerate(channels_list):
+            first_conv.append(CNS(channels, out_channels, 1))
+        self.first_conv = nn.ModuleList(first_conv)
         conv_td_list = []
         conv_out_list = []
         for i in range(reps):
@@ -29,17 +34,16 @@ class BiFPN(nn.Module):
             conv_out = []
             for idx, channels in enumerate(channels_list):
                 if idx == len(channels_list) - 1:
-                    td_in = channels
+                    td_in = out_channels
                 else:
-                    td_in = channels + out_channels
+                    td_in = 2 * out_channels
 
                 if idx == 0:
                     out_in = out_channels
                 else:
-                    out_in = channels + 2 * out_channels
+                    out_in = 3 * out_channels
                 conv_td.append(SeparableCNS(td_in, out_channels))
                 conv_out.append(SeparableCNS(out_in, out_channels))
-                channels_list[idx] = out_channels
             conv_td = nn.ModuleList(conv_td)
             conv_out = nn.ModuleList(conv_out)
             conv_td_list.append(conv_td)
@@ -49,12 +53,18 @@ class BiFPN(nn.Module):
         self.eps = eps
 
     def forward(self, features):
-        self.td_weights = self.td_weights.relu()
-        self.td_weights = self.td_weights / (
-            self.td_weights.sum(2, keepdim=True) + self.eps)
-        self.out_weights = self.out_weights.relu()
-        self.out_weights = self.out_weights / (
-            self.out_weights.sum(2, keepdim=True) + self.eps)
+        td_weights = self.td_weights.relu()
+        td_weights = td_weights / (td_weights.sum(2, keepdim=True) + self.eps)
+        out_weights = self.out_weights.relu()
+        out_weights = out_weights / (out_weights.sum(2, keepdim=True) +
+                                     self.eps)
+
+        # first conv
+        features = [
+            conv(feature) for conv, feature in zip(self.first_conv, features)
+        ]
+
+        # BiFPN
         for li, (conv_td, conv_out) in enumerate(
                 zip(self.conv_td_list, self.conv_out_list)):
             ftd_list = []
@@ -62,13 +72,13 @@ class BiFPN(nn.Module):
                                                 conv_td[::-1])):
                 ftd = f
                 if idx > 0:
-                    ftd = ftd * self.td_weights[li, idx, 0]
+                    ftd = ftd * td_weights[li, idx, 0]
                     high = ftd_list[-1]
                     high = F.interpolate(high,
                                          scale_factor=2,
                                          mode='bilinear',
                                          align_corners=True)
-                    high *= self.td_weights[li, idx, 1]
+                    high *= td_weights[li, idx, 1]
                     ftd = torch.cat([ftd, high], 1)
                 ftd = conv(ftd)
                 ftd_list.append(ftd)
@@ -78,17 +88,16 @@ class BiFPN(nn.Module):
                       conv) in enumerate(zip(features, ftd_list, conv_out)):
                 fout = ftd
                 if idx > 0:
-                    f = f * self.out_weights[li, idx, 0]
-                    ftd = ftd * self.out_weights[li, idx, 1]
+                    f = f * out_weights[li, idx, 0]
+                    ftd = ftd * out_weights[li, idx, 1]
                     low = fout_list[-1]
                     low = F.interpolate(low,
                                         scale_factor=0.5,
                                         mode='bilinear',
                                         align_corners=True)
-                    low = low * self.out_weights[li, idx, 2]
+                    low = low * out_weights[li, idx, 2]
                     ftd = torch.cat([f, ftd, low], 1)
                 ftd = conv(ftd)
                 fout_list.append(fout)
             features = fout_list
-
         return features

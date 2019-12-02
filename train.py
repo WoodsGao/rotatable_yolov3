@@ -96,13 +96,18 @@ def train(data_dir,
         trainer.save(save_path_list)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+    if dist.is_available():
+        try:
+            dist.init_process_group(backend="gloo", init_method="env://")
+        except:
+            pass
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data-dir', type=str, default='data/mark')
+    parser.add_argument('--data-dir', type=str, default='data/voc')
     parser.add_argument('--epochs', type=int, default=100)
-    parser.add_argument('--img-size', type=int, default=256)
-    parser.add_argument('--batch-size', type=int, default=8)
-    parser.add_argument('--accumulate', type=int, default=4)
+    parser.add_argument('--img-size', type=int, default=512)
+    parser.add_argument('--batch-size', type=int, default=4)
+    parser.add_argument('--accumulate', type=int, default=8)
     parser.add_argument('--num-workers', type=int, default=4)
     parser.add_argument('--lr', type=float, default=0)
     parser.add_argument('--adam', action='store_true')
