@@ -135,7 +135,7 @@ class YOLOV3(BasicModel):
                     drop_rate=self.backbone.drop_ratio),
         )
         width = int(8 * (1.35**model_id)) * 8
-        self.fpn = FPN(self.backbone.out_channels[2:], width, 2 + model_id)
+        self.fpn = BiFPN(self.backbone.out_channels[2:], width, 2 + model_id)
         final_conv = []
         for i in range(3 + model_id // 3):
             final_conv.append(SeparableCNS(width, width))
@@ -147,7 +147,7 @@ class YOLOV3(BasicModel):
         for i in range(3, 8):
             yolo_layers.append(
                 YOLOLayer(
-                    anchors=img_size / (2**i) * default_anchors,
+                    anchors=(2**i) * default_anchors,
                     nc=num_classes,
                     img_size=img_size,
                     yolo_index=i - 3,
