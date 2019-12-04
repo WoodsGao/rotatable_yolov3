@@ -1,5 +1,6 @@
 from .focal import FocalBCELoss
 from .empty_layer import EmptyLayer
+from .drop_connect import DropConnect
 from .ada_group_norm import AdaGroupNorm
 from .activation import Swish, CReLU
 from .weight_standard_conv import WSConv2d

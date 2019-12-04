@@ -22,8 +22,8 @@ class SeparableConv2d(nn.Module):
                 in_channels,
                 bias,
             ),
-            AdaGroupNorm(in_channels),
-            nn.Conv2d(in_channels, out_channels, 1, bias=bias),
+            nn.GroupNorm(8, in_channels), 
+            WSConv2d(in_channels, out_channels, 1, bias=bias),
         )
 
     def forward(self, x):
