@@ -22,7 +22,7 @@ class ClassificationDataset(BasicDataset):
             names = [n for n in f.read().split('\n') if n]
         self.data = [
             [
-                name,
+                os.path.join(data_dir, name),
                 self.classes.index(os.path.basename(os.path.dirname(name)))
             ] for name in names
             if os.path.splitext(name)[1] in IMG_EXT
