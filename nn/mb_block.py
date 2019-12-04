@@ -57,8 +57,8 @@ class MbConv(nn.Module):
                 dilation=dilation),
             SELayer(mid_channels),
             # no activation, see https://arxiv.org/pdf/1604.04112.pdf
-            WSConv2d(mid_channels, out_channels, 1, bias=False),
-            nn.GroupNorm(8, out_channels),
+            CNS(mid_channels, out_channels, 1, activate=False),
+            DropConnect(0.1),
         )
 
     def forward(self, x):
