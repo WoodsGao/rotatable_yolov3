@@ -2,7 +2,7 @@ from random import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from . import Swish, CNS, SELayer, EmptyLayer
+from . import Swish, CNS, SELayer, EmptyLayer, DropConnect, WSConv2d
 
 
 class MbBlock(nn.Module):
@@ -16,12 +16,14 @@ class MbBlock(nn.Module):
                  drop_rate=0.2,
                  reps=1):
         super(MbBlock, self).__init__()
-        blocks = []
+        blocks = [
+            MbConv(in_channels, out_channels, ksize, stride, dilation,
+                   expand_ratio, drop_rate)
+        ]
         for i in range(reps):
             blocks.append(
-                MbConv(in_channels if i == 0 else out_channels, out_channels,
-                       ksize, stride if i == 0 else 1, dilation, expand_ratio,
-                       drop_rate))
+                MbConv(out_channels, out_channels, ksize, 1, dilation,
+                       expand_ratio, drop_rate))
         self.blocks = nn.Sequential(*blocks)
 
     def forward(self, x):
@@ -54,16 +56,17 @@ class MbConv(nn.Module):
                 groups=mid_channels,
                 dilation=dilation),
             SELayer(mid_channels),
-            # See https://arxiv.org/pdf/1604.04112.pdf
-            CNS(mid_channels, out_channels, 1, activate=False),
+            # no activation, see https://arxiv.org/pdf/1604.04112.pdf
+            WSConv2d(mid_channels, out_channels, 1, bias=False),
+            nn.GroupNorm(8, out_channels),
         )
 
     def forward(self, x):
+        if self.training and self.add and random() < self.drop_rate:
+            return x
         f = self.block(x)
         if self.add:
-            if self.training:
-                if random() > self.drop_rate:
-                    f.add_(x)
-            else:
-                f.add_(x.mul(1 - self.drop_rate))
+            if not self.training:
+                f *= (1 - self.drop_rate)
+            f += x
         return f

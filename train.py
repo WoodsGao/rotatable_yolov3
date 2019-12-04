@@ -5,7 +5,7 @@ import torch.distributed as dist
 from tqdm import tqdm
 from test import test
 from models import YOLOV3
-from utils.utils import ComputeLoss
+from utils.utils import compute_loss
 from utils.modules.utils import Trainer, Fetcher
 from utils.modules.datasets import DetectionDataset
 from torch.utils.data import DataLoader, DistributedSampler
@@ -71,7 +71,6 @@ def train(data_dir,
     model = YOLOV3(80)
     # maps = np.zeros()  # mAP per class
 
-    compute_loss = ComputeLoss(model)
     trainer = Trainer(model, train_fetcher, compute_loss, weights, accumulate,
                       adam, lr, mixed_precision)
     while trainer.epoch < epochs:

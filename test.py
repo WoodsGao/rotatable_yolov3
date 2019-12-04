@@ -3,7 +3,7 @@ import torch
 import numpy as np
 from tqdm import tqdm
 from models import YOLOV3
-from utils.utils import ComputeLoss, non_max_suppression, clip_coords, xywh2xyxy, bbox_iou, ap_per_class
+from utils.utils import compute_loss, non_max_suppression, clip_coords, xywh2xyxy, bbox_iou, ap_per_class
 
 
 def test(model, fetcher, conf_thres=1e-3, nms_thres=0.5):
@@ -11,7 +11,6 @@ def test(model, fetcher, conf_thres=1e-3, nms_thres=0.5):
     val_loss = 0
     classes = fetcher.loader.dataset.classes
     num_classes = len(classes)
-    compute_loss = ComputeLoss(model)
     seen = 0
     s = ('%20s' + '%10s' * 6) % ('Class', 'Images', 'Targets', 'P', 'R', 'mAP',
                                  'F1')
@@ -31,7 +30,7 @@ def test(model, fetcher, conf_thres=1e-3, nms_thres=0.5):
 
             # Compute loss
             val_loss += compute_loss(train_out,
-                                     targets).item()  # GIoU, obj, cls
+                                     targets, model).item()  # GIoU, obj, cls
 
             # Run NMS
             output = non_max_suppression(inf_out,
@@ -85,7 +84,7 @@ def test(model, fetcher, conf_thres=1e-3, nms_thres=0.5):
                         iou, bi = bbox_iou(pbox, tbox[m]).max(0)
 
                         # If iou > threshold and class is correct mark as correct
-                        if iou > 0.28 and m[
+                        if iou > 0.5 and m[
                                 bi] not in detected:  # and pcls == tcls[bi]:
                             correct[i] = 1
                             detected.append(m[bi])
@@ -116,6 +115,7 @@ def test(model, fetcher, conf_thres=1e-3, nms_thres=0.5):
     for i, c in enumerate(ap_class):
         maps[c] = ap[i]
     # return (mp, mr, map, mf1, *(loss / len(dataloader)).tolist()), maps
+    print(val_loss / len(fetcher))
     return map
 
 

@@ -246,67 +246,59 @@ def wh_iou(box1, box2):
     return inter_area / union_area  # iou
 
 
-class ComputeLoss:
-    def __init__(self, model):
-        self.model = model
-
-    def __call__(self, p, targets):
-        ft = torch.cuda.FloatTensor if p[0].is_cuda else torch.Tensor
-        lcls, lbox, lobj = ft([0]), ft([0]), ft([0])
-        tcls, tbox, indices, anchor_vec = build_targets(self.model, targets)
-        # Define criteria
-        BCEcls = nn.BCEWithLogitsLoss()
-        BCEobj = nn.BCEWithLogitsLoss()
-        BCE = nn.BCEWithLogitsLoss()
-        CE = nn.CrossEntropyLoss()  # weight=model.class_weights
+def compute_loss(p, targets, model):  # predictions, targets, model
+    ft = torch.cuda.FloatTensor if p[0].is_cuda else torch.Tensor
+    lcls, lbox, lobj = ft([0]), ft([0]), ft([0])
+    tcls, tbox, indices, anchor_vec = build_targets(model, targets)
+    # Define criteria
+    BCEcls = nn.BCEWithLogitsLoss()
+    BCEobj = nn.BCEWithLogitsLoss()
+    BCE = nn.BCEWithLogitsLoss()
+    CE = nn.CrossEntropyLoss()  # weight=model.class_weights
+    # Compute losses
+    for i, pi in enumerate(p):  # layer index, layer predictions
+        b, a, gj, gi = indices[i]  # image, anchor, gridy, gridx
+        tobj = torch.zeros_like(pi[..., 0])  # target obj
 
         # Compute losses
-        for i, pi in enumerate(p):  # layer index, layer predictions
-            b, a, gj, gi = indices[i]  # image, anchor, gridy, gridx
-            tobj = torch.zeros_like(pi[..., 0])  # target obj
+        nb = len(b)
+        if nb:  # number of targets
+            ps = pi[b, a, gj, gi]  # prediction subset corresponding to targets
+            tobj[b, a, gj, gi] = 1.0  # obj
+            # ps[:, 2:4] = torch.sigmoid(ps[:, 2:4])  # wh power loss (uncomment)
 
-            # Compute losses
-            nb = len(b)
-            if nb:  # number of targets
-                ps = pi[b, a, gj,
-                        gi]  # prediction subset corresponding to targets
-                tobj[b, a, gj, gi] = 1.0  # obj
-                # ps[:, 2:4] = torch.sigmoid(ps[:, 2:4])  # wh power loss (uncomment)
+            # GIoU
+            pxy = torch.sigmoid(
+                ps[:, 0:2]
+            )  # pxy = pxy * s - (s - 1) / 2,  s = 1.5  (scale_xy)
+            pbox = torch.cat((pxy, torch.exp(ps[:, 2:4]) * anchor_vec[i]),
+                             1)  # predicted box
+            giou = bbox_iou(pbox.t(), tbox[i], x1y1x2y2=False,
+                            GIoU=True)  # giou computation
+            lbox += (1.0 - giou).mean()  # giou loss
 
-                # GIoU
-                pxy = torch.sigmoid(
-                    ps[:, 0:2]
-                )  # pxy = pxy * s - (s - 1) / 2,  s = 1.5  (scale_xy)
-                pbox = torch.cat((pxy, torch.exp(ps[:, 2:4]) * anchor_vec[i]),
-                                 1)  # predicted box
-                giou = bbox_iou(pbox.t(), tbox[i], x1y1x2y2=False,
-                                GIoU=True)  # giou computation
-                lbox += (1.0 - giou).mean()  # giou loss
+            # if model.nc > 1:  # cls loss (only if multiple classes)
+            t = torch.zeros_like(ps[:, 5:])  # targets
+            t[range(nb), tcls[i]] = 1.0
+            lcls += BCE(ps[:, 5:], t).mean()  # BCE
+            #ce = CE(ps[:, 5:], tcls[i])  # CE
+            #lcls += ce
+            # Instance-class weighting (use with reduction='none')
+            # nt = t.sum(0) + 1  # number of targets per class
+            # lcls += (BCEcls(ps[:, 5:], t) / nt).mean() * nt.mean()  # v1
+            # lcls += (BCEcls(ps[:, 5:], t) / nt[tcls[i]].view(-1,1)).mean() * nt.mean()  # v2
 
-                t = torch.zeros_like(ps[:, 5:])  # targets
-                t[range(nb), tcls[i]] = 1.0
-                # lcls += BCE(ps[:, 5:], t).mean()  # BCE
-                ce = CE(ps[:, 5:], tcls[i])  # CE
-                lcls += ce
+            # Append targets to text file
+            # with open('targets.txt', 'a') as file:
+            #     [file.write('%11.5g ' * 4 % tuple(x) + '\n') for x in torch.cat((txy[i], twh[i]), 1)]
+        bce = BCE(pi[..., 4], tobj)
+        lobj += bce  # obj loss
 
-                # Instance-class weighting (use with reduction='none')
-                # nt = t.sum(0) + 1  # number of targets per class
-                # lcls += (BCEcls(ps[:, 5:], t) / nt).mean() * nt.mean()  # v1
-                # lcls += (BCEcls(ps[:, 5:], t) / nt[tcls[i]].view(-1,1)).mean() * nt.mean()  # v2
-
-                # Append targets to text file
-                # with open('targets.txt', 'a') as file:
-                #     [file.write('%11.5g ' * 4 % tuple(x) + '\n') for x in torch.cat((txy[i], twh[i]), 1)]
-            bce = BCE(pi[..., 4], tobj)
-            lobj += bce  # obj loss
-
-        lbox *= 3.31
-        lobj *= 42.4
-        lcls *= 40
-        loss = lbox + lobj + lcls
-        # return loss, torch.cat((lbox, lobj, lcls, loss)).detach()
-        return loss
-
+    lbox *= 3.31 
+    lobj *= 42.4
+    lcls *= 40. 
+    loss = lbox + lobj + lcls
+    return loss
 
 def build_targets(model, targets):
     # targets = [image, class, x, y, w, h]

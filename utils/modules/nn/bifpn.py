@@ -18,7 +18,6 @@ class BiFPN(nn.Module):
             eps {int} -- a smalll number (default: {1e-4})
         """
         super(BiFPN, self).__init__()
-        assert reps > 0
         self.td_weights = nn.Parameter(
             torch.ones([reps, len(channels_list), 2]))
         self.out_weights = nn.Parameter(
@@ -33,17 +32,8 @@ class BiFPN(nn.Module):
             conv_td = []
             conv_out = []
             for idx, channels in enumerate(channels_list):
-                if idx == len(channels_list) - 1:
-                    td_in = out_channels
-                else:
-                    td_in = 2 * out_channels
-
-                if idx == 0:
-                    out_in = out_channels
-                else:
-                    out_in = 3 * out_channels
-                conv_td.append(SeparableCNS(td_in, out_channels))
-                conv_out.append(SeparableCNS(out_in, out_channels))
+                conv_td.append(SeparableCNS(out_channels, out_channels))
+                conv_out.append(SeparableCNS(out_channels, out_channels))
             conv_td = nn.ModuleList(conv_td)
             conv_out = nn.ModuleList(conv_out)
             conv_td_list.append(conv_td)
@@ -79,7 +69,7 @@ class BiFPN(nn.Module):
                                          mode='bilinear',
                                          align_corners=True)
                     high *= td_weights[li, idx, 1]
-                    ftd = torch.cat([ftd, high], 1)
+                    ftd += high
                 ftd = conv(ftd)
                 ftd_list.append(ftd)
             ftd_list = ftd_list[::-1]
@@ -96,7 +86,8 @@ class BiFPN(nn.Module):
                                         mode='bilinear',
                                         align_corners=True)
                     low = low * out_weights[li, idx, 2]
-                    ftd = torch.cat([f, ftd, low], 1)
+                    ftd += f
+                    ftd += low
                 ftd = conv(ftd)
                 fout_list.append(fout)
             features = fout_list

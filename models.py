@@ -22,23 +22,30 @@ class YOLOLayer(nn.Module):
         self.ny = 0  # initialize number of y gridpoints
 
         if ONNX_EXPORT:  # grids must be computed in __init__
-            stride = [32, 16, 8][yolo_index]  # stride of this layer
+            stride = [8, 16, 32][yolo_index]  # stride of this layer
             nx = int(img_size[1] / stride)  # number x grid points
             ny = int(img_size[0] / stride)  # number y grid points
             create_grids(self, img_size, (nx, ny))
 
-    def forward(self, bbox_feature, cls_feature, img_size, var=None):
+    def forward(
+            self,
+            bbox_feature,  # cls_feature, 
+            img_size,
+            var=None):
         if ONNX_EXPORT:
             bs = 1  # batch size
         else:
-            bs, ny, nx = bbox_feature.shape[0], bbox_feature.shape[-2], bbox_feature.shape[-1]
+            bs, ny, nx = bbox_feature.shape[0], bbox_feature.shape[
+                -2], bbox_feature.shape[-1]
             if (self.nx, self.ny) != (nx, ny):
-                create_grids(self, img_size, (nx, ny), bbox_feature.device, bbox_feature.dtype)
+                create_grids(self, img_size, (nx, ny), bbox_feature.device,
+                             bbox_feature.dtype)
 
-        bbox_feature = bbox_feature.view(bs, self.na, 4, self.ny, self.nx)
-        cls_feature = cls_feature.view(bs, self.na, 1 + self.nc, self.ny, self.nx)
-        p = torch.cat([bbox_feature, cls_feature], 2)
-
+        # bbox_feature =
+        # cls_feature = cls_feature.view(bs, self.na, 1 + self.nc, self.ny,
+        #                                self.nx)
+        # p = torch.cat([bbox_feature, cls_feature], 2)
+        p = bbox_feature.view(bs, self.na, 5 + self.nc, self.ny, self.nx)
         # p.view(bs, 255, 13, 13) -- > (bs, 3, 13, 13, 85)  # (bs, anchors, grid, grid, classes + xywh)
         p = p.permute(0, 1, 3, 4, 2).contiguous()  # prediction
 
@@ -96,72 +103,50 @@ class YOLOV3(BasicModel):
 
     def __init__(self, num_classes, img_size=512):
         super(YOLOV3, self).__init__()
-        ratios = np.float32([1, 2, 3, 1 / 2, 1 / 3])
-        ratios = np.sqrt(ratios)
-        w_ratios = ratios
-        h_ratios = 1 / ratios
-        default_anchors = np.float32([w_ratios, h_ratios]).transpose(1, 0)
+        anchors = [
+            [[10, 13], [16, 30], [33, 23]],
+            [[30, 61], [62, 45], [59, 119]],
+            [[116, 90], [156, 198], [373, 326]],
+        ]
+        anchors = np.float32(anchors)
+
         model_id = 2
         self.backbone = EfficientNet(model_id)
-        width = [416, 512, 608, 704]
-        width = [int(w * (1.1**model_id) / 8) * 8 for w in width]
-        self.backbone.width += width
-        self.backbone.out_channels += [width[1], width[3]]
-        depth = [5, 1, 6, 1]
-        depth = [int(d * (1.2**model_id)) for d in depth]
-        self.backbone.depth += depth
-        self.backbone.block6 = nn.Sequential(
-            MbBlock(self.backbone.width[7],
-                    self.backbone.width[8],
-                    5,
-                    stride=2,
-                    reps=self.backbone.depth[7],
-                    drop_rate=self.backbone.drop_ratio),
-            MbBlock(self.backbone.width[8],
-                    self.backbone.width[9],
-                    3,
-                    reps=self.backbone.depth[8],
-                    drop_rate=self.backbone.drop_ratio),
-        )
-        self.backbone.block7 = nn.Sequential(
-            MbBlock(self.backbone.width[9],
-                    self.backbone.width[10],
-                    5,
-                    stride=2,
-                    reps=self.backbone.depth[9],
-                    drop_rate=self.backbone.drop_ratio),
-            MbBlock(self.backbone.width[10],
-                    self.backbone.width[11],
-                    3,
-                    reps=self.backbone.depth[10],
-                    drop_rate=self.backbone.drop_ratio),
-        )
+
         width = int(8 * (1.35**model_id)) * 8
-        self.fpn = BiFPN(self.backbone.out_channels[2:], width, 2 + model_id)
-        bbox_conv = []
-        cls_conv = []
-        for i in range(3 + model_id // 3):
-            bbox_conv.append(SeparableCNS(width, width))
-            cls_conv.append(SeparableCNS(width, width))
-        bbox_conv.append(nn.Conv2d(width, len(default_anchors) * 4, 1))
-        cls_conv.append(
-            nn.Conv2d(width,
-                      len(default_anchors) * (1 + num_classes), 1))
-        self.bbox_conv = nn.Sequential(*bbox_conv)
-        self.cls_conv = nn.Sequential(*cls_conv)
+        self.fpn = BiFPN(self.backbone.out_channels[2:], width, model_id + 2)
+
         yolo_layers = []
-        for i in range(3, 8):
+        bbox_conv_list = []
+        cls_conv_list = []
+        for i in range(3):
+            bbox_conv = []
+            # cls_conv = []
+            for i in range(3 + model_id // 3):
+                bbox_conv.append(CNS(width, width))
+                # cls_conv.append(SeparableCNS(width, width))
+            bbox_conv.append(
+                nn.Conv2d(width,
+                          len(anchors[i]) * (5 + num_classes), 1))
+            # cls_conv.append(
+            #     nn.Conv2d(width,
+            #               len(anchors[i]) * (1 + num_classes), 1))
+            bbox_conv = nn.Sequential(*bbox_conv)
+            # cls_conv = nn.Sequential(*cls_conv)
+            bbox_conv_list.append(bbox_conv)
+            # cls_conv_list.append(cls_conv)
             yolo_layers.append(
                 YOLOLayer(
-                    anchors=(2**i) * default_anchors,
+                    anchors=anchors[i],
                     nc=num_classes,
                     img_size=img_size,
-                    yolo_index=i - 3,
+                    yolo_index=i,
                 ))
+        self.bbox_conv_list = nn.ModuleList(bbox_conv_list)
+        # self.cls_conv_list = nn.ModuleList(cls_conv_list)
         self.yolo_layers = nn.ModuleList(yolo_layers)
         self.init()
         self.num_classes = num_classes
-        self.num_anchors = len(default_anchors)
 
     def forward(self, x):
         img_size = x.shape[-2:]
@@ -175,16 +160,13 @@ class YOLOV3(BasicModel):
         features.append(x)
         x = self.backbone.block5(x)
         features.append(x)
-        x = self.backbone.block6(x)
-        features.append(x)
-        x = self.backbone.block7(x)
-        features.append(x)
         features = self.fpn(features)
         for fi, feature in enumerate(features):
-            bbox_feature = self.bbox_conv(feature)
-            cls_feature = self.cls_conv(feature)
-            output.append(self.yolo_layers[fi](bbox_feature, cls_feature,
-                                               img_size))
+            bbox_feature = self.bbox_conv_list[fi](feature)
+            # cls_feature = self.cls_conv_list[fi](feature)
+            output.append(self.yolo_layers[fi](
+                bbox_feature,  # cls_feature,
+                img_size))
         if self.training:
             return output
         elif ONNX_EXPORT:
