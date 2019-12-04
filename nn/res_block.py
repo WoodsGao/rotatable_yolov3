@@ -1,5 +1,5 @@
 import torch.nn as nn
-from . import CNS, EmptyLayer, SELayer
+from . import CNS, EmptyLayer, SELayer, WSConv2d
 
 
 class ResBlock(nn.Module):
@@ -24,7 +24,8 @@ class ResBlock(nn.Module):
                 groups=32 if out_channels % 64 == 0 else 1,
             ),
             # See https://arxiv.org/pdf/1604.04112.pdf
-            CNS(out_channels // 2, out_channels, 1, activate=False),
+            WSConv2d(out_channels // 2, out_channels, 1, bias=False),
+            nn.GroupNorm(8, out_channels),
         )
 
     def forward(self, x):

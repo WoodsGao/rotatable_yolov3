@@ -111,7 +111,7 @@ class Trainer:
             if self.accumulate_count % self.accumulate == 0 and dist.is_initialized():
                 self.model.require_backward_grad_sync = True
             outputs = self.model(inputs)
-            loss = self.loss_fn(outputs, targets)
+            loss = self.loss_fn(outputs, targets, self.model)
             total_loss += loss.item()
             loss /= self.accumulate
             # Compute gradient
@@ -127,6 +127,7 @@ class Trainer:
             if self.accumulate_count % self.accumulate == 0:
                 self.accumulate_count = 0
                 # print(self.model.module.backbone.block1[1].blocks[0].block[1].conv.weight)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 10)
                 self.optimizer.step()
                 self.optimizer.zero_grad()
                 if dist.is_initialized():
