@@ -115,6 +115,9 @@ class Trainer:
                 self.model.require_backward_grad_sync = True
             outputs = self.model(inputs)
             loss = self.loss_fn(outputs, targets, self.model)
+            if torch.isnan(loss):
+                print('nan loss')
+                continue
             total_loss += loss.item()
             loss /= self.accumulate
             # Compute gradient
