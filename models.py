@@ -141,11 +141,11 @@ class YOLOV3(BasicModel):
         features = [
             final(feature) for feature, final in zip(features, self.final)
         ]
+        features.reverse()
         output = [
             yolo(feature, img_size)
             for feature, yolo in zip(features, self.yolo_layers)
         ]
-        output.reverse()
         if self.training:
             return output
         elif ONNX_EXPORT:
