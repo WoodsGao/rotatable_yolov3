@@ -17,6 +17,7 @@ class ClassificationDataset(BasicDataset):
             cn for cn in class_names
             if os.path.isdir(os.path.join(data_dir, cn))
         ]
+        class_names.sort()
         self.classes = class_names
         with open(self.path, 'r') as f:
             names = [n for n in f.read().split('\n') if n]

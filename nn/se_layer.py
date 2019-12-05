@@ -17,5 +17,4 @@ class SELayer(nn.Module):
     def forward(self, x):
         gap = self.gap(x)
         weight = self.weight(gap)
-        x.mul_(weight)
-        return x
+        return x * weight

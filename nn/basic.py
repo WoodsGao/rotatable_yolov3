@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from . import Mish, SeparableConv2d, WSConv2d, EmptyLayer, AdaGroupNorm
+from . import Mish, WSConv2d, EmptyLayer, AdaGroupNorm
 
 
 class CNS(nn.Module):
@@ -44,14 +44,14 @@ class SeparableCNS(nn.Module):
                  activate=True):
         super(SeparableCNS, self).__init__()
         self.block = nn.Sequential(
-            SeparableConv2d(in_channels,
-                            out_channels,
-                            ksize,
-                            stride=stride,
-                            dilation=dilation,
-                            bias=False),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(True) if activate else EmptyLayer(),
+            CNS(in_channels,
+                in_channels,
+                ksize,
+                stride=stride,
+                groups=in_channels,
+                dilation=dilation,
+                inplace=True),
+            CNS(in_channels, out_channels, 1, activate=activate),
         )
 
     def forward(self, x):
