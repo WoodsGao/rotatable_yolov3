@@ -4,6 +4,7 @@ import torch.optim as optim
 import torch.distributed as dist
 from tqdm import tqdm
 from . import device
+from ..optims import Ranger
 
 amp = None
 try:
@@ -32,9 +33,9 @@ class Trainer:
         self.fetcher = fetcher
         self.loss_fn = loss_fn
         if adam:
-            optimizer = optim.AdamW(model.parameters(),
-                                    lr=lr if lr > 0 else 1e-4,
-                                    weight_decay=1e-5)
+            optimizer = Ranger(model.parameters(),
+                               lr=lr if lr > 0 else 1e-3,
+                               weight_decay=1e-5)
         else:
             optimizer = optim.SGD(model.parameters(),
                                   lr=lr if lr > 0 else 1e-3,
@@ -108,7 +109,8 @@ class Trainer:
                 continue
             self.accumulate_count += 1
             batch_idx = idx + 1
-            if self.accumulate_count % self.accumulate == 0 and dist.is_initialized():
+            if self.accumulate_count % self.accumulate == 0 and dist.is_initialized(
+            ):
                 self.model.require_backward_grad_sync = True
             outputs = self.model(inputs)
             loss = self.loss_fn(outputs, targets, self.model)
@@ -134,4 +136,7 @@ class Trainer:
                     self.model.require_backward_grad_sync = False
         torch.cuda.empty_cache()
         self.epoch += 1
+        # lr decay
+        for pg in self.optimizer.param_groups:
+            pg['lr'] *= (1 - 1e-8)
         return total_loss / len(self.fetcher)

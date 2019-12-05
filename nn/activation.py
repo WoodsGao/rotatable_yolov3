@@ -10,4 +10,9 @@ class CReLU(nn.Module):
 
 class Swish(nn.Module):
     def forward(self, x):
-        return x.mul_(x.sigmoid())
+        return x * x.sigmoid()
+
+
+class Mish(nn.Module):
+    def forward(self, x):
+        return x * torch.tanh(F.softplus(x))

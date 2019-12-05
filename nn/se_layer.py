@@ -9,7 +9,7 @@ class SELayer(nn.Module):
         self.gap = nn.AdaptiveAvgPool2d(1)
         self.weight = nn.Sequential(
             nn.Conv2d(filters, filters // div, 1),
-            Swish(),
+            nn.ReLU(True),
             nn.Conv2d(filters // div, filters, 1),
             nn.Sigmoid(),
         )
