@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from . import Swish, SeparableConv2d, WSConv2d, EmptyLayer, AdaGroupNorm
+from . import Mish, SeparableConv2d, WSConv2d, EmptyLayer, AdaGroupNorm
 
 
 class CNS(nn.Module):
@@ -12,7 +12,8 @@ class CNS(nn.Module):
                  stride=1,
                  groups=1,
                  dilation=1,
-                 activate=True):
+                 activate=True,
+                 inplace=False):
         super(CNS, self).__init__()
         # conv = WSConv2d if groups == 1 else nn.Conv2d
         self.block = nn.Sequential(
@@ -20,12 +21,12 @@ class CNS(nn.Module):
                       out_channels,
                       ksize,
                       stride=stride,
-                      padding=(ksize - 1) // 2 - 1 + dilation,
+                      padding=(ksize - 1) // 2 * dilation,
                       groups=groups,
                       dilation=dilation,
                       bias=False),
             nn.BatchNorm2d(out_channels),
-            Swish() if activate else EmptyLayer(),
+            nn.ReLU(inplace) if activate else EmptyLayer(),
         )
 
     def forward(self, x):
@@ -50,7 +51,7 @@ class SeparableCNS(nn.Module):
                             dilation=dilation,
                             bias=False),
             nn.BatchNorm2d(out_channels),
-            Swish() if activate else EmptyLayer(),
+            nn.ReLU(True) if activate else EmptyLayer(),
         )
 
     def forward(self, x):
