@@ -41,14 +41,15 @@ class Ranger(optim.Optimizer):
         self.k = k
 
         # radam buffer for state
-        self.radam_buffer = [[None, None, None] for ind in range(10)]
+        self.state['random_buffer'] = [[None, None, None] for ind in range(10)]
 
         # lookahead weights
-        self.slow_weights = [[p.clone().detach() for p in group['params']]
-                             for group in self.param_groups]
+        self.state['slow_weights'] = [[
+            p.clone().detach() for p in group['params']
+        ] for group in self.param_groups]
 
         # don't use grad for lookahead weights
-        for w in it.chain(*self.slow_weights):
+        for w in it.chain(*self.state['slow_weights']):
             w.requires_grad = False
 
     def __setstate__(self, state):
@@ -94,7 +95,7 @@ class Ranger(optim.Optimizer):
                 exp_avg.mul_(beta1).add_(1 - beta1, grad)
 
                 state['step'] += 1
-                buffered = self.radam_buffer[int(state['step'] % 10)]
+                buffered = self.state['random_buffer'][int(state['step'] % 10)]
                 if state['step'] == buffered[0]:
                     N_sma, step_size = buffered[1], buffered[2]
                 else:
@@ -128,7 +129,8 @@ class Ranger(optim.Optimizer):
         # ---------------- end radam step
 
         # look ahead tracking and updating if latest batch = k
-        for group, slow_weights in zip(self.param_groups, self.slow_weights):
+        for group, slow_weights in zip(self.param_groups,
+                                       self.state['slow_weights']):
             group['step_counter'] += 1
             if group['step_counter'] % self.k != 0:
                 continue

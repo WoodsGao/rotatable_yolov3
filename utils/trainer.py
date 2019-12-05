@@ -70,10 +70,10 @@ class Trainer:
         state_dict = torch.load(weights, map_location=device)
         if self.adam:
             if 'adam' in state_dict:
-                self.optimizer = state_dict['adam']
+                self.optimizer.load_state_dict(state_dict['adam'])
         else:
             if 'sgd' in state_dict:
-                self.optimizer = state_dict['sgd']
+                self.optimizer.load_state_dict(state_dict['sgd'])
         if 'm' in state_dict:
             self.metrics = state_dict['m']
         if 'e' in state_dict:
@@ -93,9 +93,9 @@ class Trainer:
             self.epoch
         }
         if self.adam:
-            state_dict['adam'] = self.optimizer
+            state_dict['adam'] = self.optimizer.state_dict()
         else:
-            state_dict['sgd'] = self.optimizer
+            state_dict['sgd'] = self.optimizer.state_dict()
         for save_path in save_path_list:
             torch.save(state_dict, save_path)
 
