@@ -41,7 +41,7 @@ class Ranger(optim.Optimizer):
         self.k = k
 
         # radam buffer for state
-        self.state['random_buffer'] = [[None, None, None] for ind in range(10)]
+        self.state['radam_buffer'] = [[None, None, None] for ind in range(10)]
 
         # lookahead weights
         self.state['slow_weights'] = [[
@@ -95,7 +95,7 @@ class Ranger(optim.Optimizer):
                 exp_avg.mul_(beta1).add_(1 - beta1, grad)
 
                 state['step'] += 1
-                buffered = self.state['random_buffer'][int(state['step'] % 10)]
+                buffered = self.state['radam_buffer'][int(state['step'] % 10)]
                 if state['step'] == buffered[0]:
                     N_sma, step_size = buffered[1], buffered[2]
                 else:

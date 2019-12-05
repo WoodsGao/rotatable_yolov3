@@ -32,10 +32,15 @@ class Trainer:
         model = model.to(device)
         self.fetcher = fetcher
         self.loss_fn = loss_fn
+        if amp is None:
+            self.mixed_precision = False
+        else:
+            self.mixed_precision = mixed_precision
         if adam:
             optimizer = Ranger(model.parameters(),
                                lr=lr if lr > 0 else 1e-3,
-                               weight_decay=1e-5)
+                               weight_decay=1e-5, 
+                               eps=1e-4 if self.mixed_precision else 1e-8)
         else:
             optimizer = optim.SGD(model.parameters(),
                                   lr=lr if lr > 0 else 1e-3,
@@ -43,10 +48,6 @@ class Trainer:
                                   weight_decay=1e-5,
                                   nesterov=True)
         self.adam = adam
-        if amp is None:
-            self.mixed_precision = False
-        else:
-            self.mixed_precision = mixed_precision
         self.model = model
         self.optimizer = optimizer
         if weights:
