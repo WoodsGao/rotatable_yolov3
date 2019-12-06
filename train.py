@@ -24,7 +24,7 @@ def train(data_dir,
           multi_scale=False,
           notest=False,
           mixed_precision=False,
-          local_rank=0):
+          nosave=False):
     os.makedirs('weights', exist_ok=True)
     train_dir = os.path.join(data_dir, 'train.txt')
     val_dir = os.path.join(data_dir, 'valid.txt')
@@ -32,14 +32,12 @@ def train(data_dir,
         train_dir,
         img_size=img_size,
         augments=augments,
-        skip_init=(local_rank > 0),
     )
     if not notest:
         val_data = DetectionDataset(
             val_dir,
             img_size=img_size,
             augments={},
-            skip_init=(local_rank > 0),
         )
     if dist.is_initialized():
         dist.barrier()
@@ -79,12 +77,13 @@ def train(data_dir,
         if trainer.epoch % 10 == 0:
             save_path_list.append('bak%d.pt' % trainer.epoch)
         if not notest:
-            metrics = test(
-                trainer.model,
-                val_fetcher,
-                conf_thres=0.001
-                if trainer.epoch > 20 else 0.1,  # 0.1 for speed
-            )
+            with torch.no_grad():
+                metrics = test(
+                    trainer.model,
+                    val_fetcher,
+                    conf_thres=0.001
+                    if trainer.epoch > 20 else 0.1,  # 0.1 for speed
+                )
             if metrics > trainer.metrics:
                 trainer.metrics = metrics
                 save_path_list.append('best.pt')
@@ -96,11 +95,6 @@ def train(data_dir,
 
 
 if __name__ == "__main__":
-    if dist.is_available():
-        try:
-            dist.init_process_group(backend="gloo", init_method="env://")
-        except:
-            pass
     parser = argparse.ArgumentParser()
     parser.add_argument('--data-dir', type=str, default='data/voc')
     parser.add_argument('--epochs', type=int, default=100)
@@ -114,7 +108,26 @@ if __name__ == "__main__":
     parser.add_argument('--notest', action='store_true')
     parser.add_argument('--weights', type=str, default='')
     parser.add_argument('--multi-scale', action='store_true')
-    parser.add_argument('--local_rank', type=int, default=0)
+    parser.add_argument('--nosave', action='store_true')
+    parser.add_argument('--backend',
+                        type=str,
+                        default='nccl',
+                        help='Name of the backend to use.')
+    parser.add_argument('-i',
+                        '--init-method',
+                        type=str,
+                        default='tcp://127.0.0.1:23456',
+                        help='URL specifying how to initialize the package.')
+    parser.add_argument('-s',
+                        '--world-size',
+                        type=int,
+                        help='Number of processes participating in the job.',
+                        default=1)
+    parser.add_argument('-r',
+                        '--rank',
+                        type=int,
+                        help='Rank of the current process.',
+                        default=0)
     augments = {
         'hsv': 0.1,
         'blur': 0.1,
@@ -128,6 +141,11 @@ if __name__ == "__main__":
     }
     opt = parser.parse_args()
     print(opt)
+    if dist.is_available() and opt.world_size > 1:
+        dist.init_process_group(backend=opt.backend,
+                                init_method=opt.init_method,
+                                world_size=opt.world_size,
+                                rank=opt.rank)
     train(
         data_dir=opt.data_dir,
         epochs=opt.epochs,
@@ -142,7 +160,7 @@ if __name__ == "__main__":
         notest=opt.notest,
         adam=opt.adam,
         mixed_precision=opt.mp,
-        local_rank=opt.local_rank,
+        nosave=opt.nosave,
     )
     if dist.is_initialized():
         dist.destroy_process_group()
