@@ -147,7 +147,7 @@ if __name__ == "__main__":
                                 world_size=opt.world_size,
                                 rank=opt.rank)
     train(
-        data_dir=opt.data_dir,
+        data_dir=opt.data,
         epochs=opt.epochs,
         img_size=opt.img_size,
         batch_size=opt.batch_size,
