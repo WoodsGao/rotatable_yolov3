@@ -12,7 +12,7 @@ class ResBlock(nn.Module):
                  dilation=1,
                  reps=1):
         super(ResBlock, self).__init__()
-        blocks = [ResConv(in_channels, out_channels, ksize, stride, dilation)]
+        blocks = [SeparableCNS(in_channels, out_channels, ksize, stride, dilation)]
         for i in range(reps):
             blocks.append(
                 ResConv(out_channels, out_channels, ksize, 1, dilation))
@@ -48,7 +48,7 @@ class ResConv(nn.Module):
                          stride=stride,
                          dilation=dilation,
                          activate=False),
-            SELayer(out_channels),
+            # SELayer(out_channels),
         )
 
     def forward(self, x):
