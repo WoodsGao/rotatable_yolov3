@@ -102,7 +102,7 @@ class YOLOV3(BasicModel):
         # self.backbone = EfficientNet(model_id)
         # width = int(8 * (1.35**model_id)) * 8
         self.backbone = ResNet()
-        self.fpn = BiFPN(self.backbone.out_channels[2:], 128, 3)
+        self.fpn = BiFPN([256, 512, 1024], 128, 3)
         self.final = []
         self.yolo_layers = []
         for i in range(3):

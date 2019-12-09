@@ -89,7 +89,7 @@ def train(data_dir,
                 save_path_list.append('best.pt')
                 print('save best, metrics: %g...' % metrics)
         save_path_list = [os.path.join('weights', p) for p in save_path_list]
-        if local_rank > 0:
+        if nosave:
             continue
         trainer.save(save_path_list)
 
