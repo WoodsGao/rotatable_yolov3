@@ -45,7 +45,7 @@ class ResConv(nn.Module):
             SeparableCNS(out_channels,
                          out_channels,
                          ksize=ksize,
-                         stride=stride,
+                         stride=1,
                          dilation=dilation,
                          activate=False),
             # SELayer(out_channels),
