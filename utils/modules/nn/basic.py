@@ -51,7 +51,7 @@ class SeparableCNS(nn.Module):
                 groups=in_channels,
                 dilation=dilation,
                 inplace=True),
-            CNS(in_channels, out_channels, 1, activate=activate),
+            CNS(in_channels, out_channels, 1, activate=activate, inplace=True),
         )
 
     def forward(self, x):

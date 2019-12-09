@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from . import CNS
+from . import CNS, SeparableCNS
 
 
 class AsppPooling(nn.Module):
@@ -24,11 +24,7 @@ class Aspp(nn.Module):
         blocks.append(CNS(in_channels, out_channels, 1))
         for rate in atrous_rates:
             blocks.append(
-                nn.Sequential(
-                    CNS(in_channels,
-                        in_channels,
-                        groups=in_channels,
-                        dilation=rate), CNS(in_channels, out_channels, 1)))
+                SeparableCNS(in_channels, out_channels, dilation=rate))
         blocks.append(AsppPooling(in_channels, out_channels))
         self.blocks = nn.ModuleList(blocks)
         self.aspp_weights = nn.Parameter(torch.ones(len(atrous_rates) + 2))
