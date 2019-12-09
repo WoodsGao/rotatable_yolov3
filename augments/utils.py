@@ -41,7 +41,7 @@ def augments_parser(cfg, src_size, dst_size):
     # ])
     if 'rotate' in cfg:
         if random() < cfg['rotate']:
-            angle = uniform(-1, 1) * np.pi
+            angle = uniform(-1 / 9., 1 / 9.) * np.pi
             matrix = np.dot(
                 np.array([
                     [
