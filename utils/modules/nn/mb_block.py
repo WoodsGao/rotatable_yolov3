@@ -57,7 +57,7 @@ class MbConv(nn.Module):
             SELayer(mid_channels),
             # no activation, see https://arxiv.org/pdf/1604.04112.pdf
             CNS(mid_channels, out_channels, 1, activate=False),
-            DropConnect(drop_rate),
+            DropConnect(drop_rate) if drop_rate > 0 and self.add else EmptyLayer(),
         )
 
     def forward(self, x):
