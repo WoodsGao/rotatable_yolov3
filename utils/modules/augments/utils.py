@@ -32,13 +32,15 @@ def augments_parser(cfg, src_size, dst_size):
         [0, factor, translation[1]],
         [0, 0, 1],
     ])
-    # ----rect transform----
-    # factor = [dst_size / src_size[1], dst_size / src_size[0]]
-    # matrix = np.float32([
-    #     [factor[0], 0, 1],
-    #     [0, factor[1], 1],
-    #     [0, 0, 1],
-    # ])
+    if 'rect' in cfg:
+        if cfg['rect']:
+            # ----rect transform----
+            factor = [dst_size / src_size[1], dst_size / src_size[0]]
+            matrix = np.float32([
+                [factor[0], 0, 1],
+                [0, factor[1], 1],
+                [0, 0, 1],
+            ])
     if 'rotate' in cfg:
         if random() < cfg['rotate']:
             angle = uniform(-1 / 9., 1 / 9.) * np.pi
