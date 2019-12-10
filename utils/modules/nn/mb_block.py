@@ -40,7 +40,6 @@ class MbConv(nn.Module):
                  expand_ratio=6,
                  drop_rate=0.2):
         super(MbConv, self).__init__()
-        self.drop_rate = drop_rate
         mid_channels = in_channels * expand_ratio
         if in_channels == out_channels and stride == 1:
             self.add = True
@@ -58,15 +57,11 @@ class MbConv(nn.Module):
             SELayer(mid_channels),
             # no activation, see https://arxiv.org/pdf/1604.04112.pdf
             CNS(mid_channels, out_channels, 1, activate=False),
-            # DropConnect(0.1),
+            DropConnect(drop_rate),
         )
 
     def forward(self, x):
-        if self.training and self.add and random() < self.drop_rate:
-            return x
         f = self.block(x)
         if self.add:
-            if not self.training:
-                f *= (1 - self.drop_rate)
             f += x
         return f

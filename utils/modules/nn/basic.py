@@ -26,7 +26,7 @@ class CNS(nn.Module):
                       dilation=dilation,
                       bias=False),
             nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace) if activate else EmptyLayer(),
+            Mish() if activate else EmptyLayer(),
         )
 
     def forward(self, x):
