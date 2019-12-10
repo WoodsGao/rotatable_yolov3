@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from utils.modules.nn import CNS, Swish, BiFPN, SeparableCNS
-from utils.modules.backbones import BasicModel, EfficientNet, ResNet
+from utils.modules.backbones import BasicModel, EfficientNet
 import math
 from utils.utils import *
 
@@ -94,23 +94,21 @@ class YOLOV3(BasicModel):
                  num_classes,
                  img_size=(416, 416),
                  anchors=[
-                     [[116, 90], [156, 198], [373, 326]],
-                     [[30, 61], [62, 45], [59, 119]],
-                     [[10, 13], [16, 30], [33, 23]],
-                 ]):
+                 [[28,46], [21,57], [15,67]], [[24,35], [18,43], [15,34]], [[27,18], [13,20], [8,8]]
+                 ],
+                 model_id=0):
         super(YOLOV3, self).__init__()
-        # self.backbone = EfficientNet(model_id)
-        # width = int(8 * (1.35**model_id)) * 8
-        self.backbone = ResNet()
-        self.fpn = BiFPN([256, 512, 1024], 128, 3)
+        self.backbone = EfficientNet(model_id)
+        width = int(8 * (1.35**model_id)) * 8
+        self.fpn = BiFPN(self.backbone.out_channels[2:], width, model_id + 2)
         self.final = []
         self.yolo_layers = []
         for i in range(3):
             final = []
-            for j in range(3):
-                final.append(SeparableCNS(128, 128))
+            for j in range(3 + model_id // 3):
+                final.append(SeparableCNS(width, width))
             final.append(
-                nn.Conv2d(128,
+                nn.Conv2d(width,
                           len(anchors[i]) * (5 + num_classes), 1))
             self.final.append(nn.Sequential(*final))
             self.yolo_layers.append(
