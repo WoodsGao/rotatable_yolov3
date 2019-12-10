@@ -37,7 +37,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-l', '--labels', type=str)
     parser.add_argument('-n', type=int, default=9)
-    parser.add_argument('-s', '--img-size', type=str, default='320,180')
+    parser.add_argument('-s', '--img-size', type=str, default='320')
     opt = parser.parse_args()
     print(opt)
     size = opt.img_size.split(',')

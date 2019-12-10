@@ -28,6 +28,7 @@ def train(data_dir,
     os.makedirs('weights', exist_ok=True)
     train_dir = os.path.join(data_dir, 'train.txt')
     val_dir = os.path.join(data_dir, 'valid.txt')
+    augments['rect'] = True
     train_data = DetectionDataset(
         train_dir,
         img_size=img_size,
@@ -37,7 +38,7 @@ def train(data_dir,
         val_data = DetectionDataset(
             val_dir,
             img_size=img_size,
-            augments={},
+            augments={'rect': True},
         )
     if dist.is_initialized():
         dist.barrier()
