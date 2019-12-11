@@ -1,1 +1,0 @@
-IMG_EXT = ['.jpg', '.jpeg', '.png', '.tiff', '.JPEG']

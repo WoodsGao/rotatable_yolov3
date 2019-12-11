@@ -1,3 +1,0 @@
-torch>=1.0
-numpy>=1.11
-opencv-python>=3.3
