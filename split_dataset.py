@@ -1,7 +1,7 @@
 import os
 import random
 import sys
-from utils.modules.utils import IMG_EXT
+from pytorch_modules.utils import IMG_EXT
 
 
 def run(data_dir, train_rate=0.7, shuffle=True):

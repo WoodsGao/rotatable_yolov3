@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from utils.modules.nn import CNS, Swish, BiFPN, SeparableCNS
-from utils.modules.backbones import BasicModel, EfficientNet
+from pytorch_modules.nn import CNS, Swish, BiFPN, SeparableCNS
+from pytorch_modules.backbones import BasicModel, EfficientNet
 import math
 from utils.utils import *
 

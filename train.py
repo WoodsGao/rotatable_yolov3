@@ -6,8 +6,8 @@ from tqdm import tqdm
 from test import test
 from models import YOLOV3
 from utils.utils import compute_loss
-from utils.modules.utils import Trainer, Fetcher
-from utils.modules.datasets import DetectionDataset
+from pytorch_modules.utils import Trainer, Fetcher
+from pytorch_modules.datasets import DetectionDataset
 from torch.utils.data import DataLoader, DistributedSampler
 
 

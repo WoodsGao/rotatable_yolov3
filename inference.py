@@ -9,7 +9,7 @@ import shutil
 from tqdm import tqdm
 from models import *  # set ONNX_EXPORT in models.py
 from utils.utils import *
-from utils.modules.utils import device, IMG_EXT
+from pytorch_modules.utils import device, IMG_EXT
 
 
 def detect(save_txt=False, save_img=False):
