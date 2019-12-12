@@ -4,7 +4,7 @@ import torch
 import torch.distributed as dist
 from tqdm import tqdm
 from test import test
-from models import YOLOV3
+from utils.models import YOLOV3
 from utils.utils import compute_loss
 from pytorch_modules.utils import Trainer, Fetcher
 from pytorch_modules.datasets import DetectionDataset

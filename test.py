@@ -2,7 +2,7 @@ import argparse
 import torch
 import numpy as np
 from tqdm import tqdm
-from models import YOLOV3
+from utils.models import YOLOV3
 from pytorch_modules.utils import device
 from utils.utils import compute_loss, non_max_suppression, clip_coords, xywh2xyxy, bbox_iou, ap_per_class
 

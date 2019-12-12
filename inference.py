@@ -7,22 +7,24 @@ import cv2
 import numpy as np
 import shutil
 from tqdm import tqdm
-from models import *  # set ONNX_EXPORT in models.py
+from utils.models import *  # set ONNX_EXPORT in models.py
 from utils.utils import *
 from pytorch_modules.utils import device, IMG_EXT
 
 
-def detect(save_txt=False, save_img=False):
-    img_size = (
-        320, 192
-    ) if ONNX_EXPORT else opt.img_size  # (320, 192) or (416, 256) or (608, 352) for (height, width)
-    out, source, weights, view_img = opt.output, opt.source, opt.weights, opt.view_img
-
+def detect(source,
+           output,
+           weights,
+           img_size=320,
+           conf_thres=0.3,
+           nms_thres=0.5,
+           view_img=False):
+    img_size = int(img_size // 32 * 32)
     # Initialize
-    if os.path.exists(out):
-        shutil.rmtree(out)  # delete output folder
-    os.makedirs(out)  # make new output folder
-    out_txt = os.path.join(out, 'txt')
+    if os.path.exists(output):
+        shutil.rmtree(output)  # delete output folder
+    os.makedirs(output)  # make new output folder
+    out_txt = os.path.join(output, 'txt')
     os.makedirs(out_txt)  # make new output folder
 
     # Initialize model
@@ -37,12 +39,6 @@ def detect(save_txt=False, save_img=False):
     # Eval mode
     model.to(device).eval()
 
-    # Export mode
-    if ONNX_EXPORT:
-        img = torch.zeros((1, 3) + img_size)  # (1, 3, 320, 192)
-        torch.onnx.export(model, img, 'weights/export.onnx', verbose=True)
-        return
-
     colors = [[random.randint(0, 255) for _ in range(3)] for _ in range(80)]
 
     # Run inference
@@ -51,9 +47,7 @@ def detect(save_txt=False, save_img=False):
     for name in tqdm(names):
         im0 = cv2.imread(os.path.join(source, name))
         img = im0.copy()
-        new_shape = (int(opt.img_size // 32 * 32),
-                     int((opt.img_size / img.shape[1] * img.shape[0]) // 32 *
-                         32))
+        new_shape = (img_size, img_size)
         img = cv2.resize(img, new_shape)
         img = img[:, :, ::-1]
         img = img.transpose(2, 0, 1)
@@ -62,7 +56,7 @@ def detect(save_txt=False, save_img=False):
         pred = model(img)[0]
 
         # Apply NMS
-        pred = non_max_suppression(pred, opt.conf_thres, opt.nms_thres)
+        pred = non_max_suppression(pred, conf_thres, nms_thres)
 
         # Process detections
         for i, det in enumerate(pred):  # detections per image
@@ -86,7 +80,7 @@ def detect(save_txt=False, save_img=False):
                             'a') as f:
                         f.write(('%g ' * 6 + '\n') % (*xyxy, cls, conf))
 
-                    if save_img or view_img:  # Add bbox to image
+                    if view_img:  # Add bbox to image
                         label = '%d %.2f' % (int(cls), conf)
                         plot_one_box(xyxy,
                                      im0,
@@ -97,8 +91,7 @@ def detect(save_txt=False, save_img=False):
                 cv2.imshow('yolo', im0)
                 cv2.waitKey(1)
             # Save results (image with detections)
-            if save_img:
-                cv2.imwrite(os.path.join(out, name), im0)
+            cv2.imwrite(os.path.join(output, name), im0)
 
 
 if __name__ == '__main__':
@@ -134,4 +127,12 @@ if __name__ == '__main__':
     print(opt)
 
     with torch.no_grad():
-        detect()
+        detect(
+            opt.source,
+            opt.output,
+            opt.weights,
+            img_size=opt.img_size,
+            conf_thres=opt.conf_thres,
+            nms_thres=opt.nms_thres,
+            view_img=opt.view_img,
+        )

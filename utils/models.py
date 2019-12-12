@@ -4,8 +4,6 @@ import torch.nn.functional as F
 import numpy as np
 from pytorch_modules.nn import CNS, Swish, BiFPN, SeparableCNS
 from pytorch_modules.backbones import BasicModel, EfficientNet
-import math
-from utils.utils import *
 
 ONNX_EXPORT = False
 
@@ -93,9 +91,9 @@ class YOLOV3(BasicModel):
     def __init__(self,
                  num_classes,
                  img_size=(416, 416),
-                 anchors=[
-                 [[28,46], [21,57], [15,67]], [[24,35], [18,43], [15,34]], [[27,18], [13,20], [8,8]]
-                 ],
+                 anchors=[[[28, 46], [21, 57], [15, 67]],
+                          [[24, 35], [18, 43], [15, 34]],
+                          [[27, 18], [13, 20], [8, 8]]],
                  model_id=0):
         super(YOLOV3, self).__init__()
         self.backbone = EfficientNet(model_id)
@@ -149,7 +147,8 @@ class YOLOV3(BasicModel):
         elif ONNX_EXPORT:
             output = torch.cat(
                 output, 1)  # cat 3 layers 85 x (507, 2028, 8112) to 85 x 10647
-            nc = self.module_list[self.yolo_layers_layers[0]].nc  # number of classes
+            nc = self.module_list[
+                self.yolo_layers_layers[0]].nc  # number of classes
             return output[5:5 + nc].t(), output[:4].t()  # ONNX scores, boxes
         else:
             io, p = list(zip(*output))  # inference output, training output
