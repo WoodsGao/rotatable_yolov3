@@ -12,12 +12,6 @@ from tqdm import tqdm
 #matplotlib.rc('font', **{'size': 11})
 
 
-def init_seeds(seed=0):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch_utils.init_seeds(seed=seed)
-
-
 def load_classes(path):
     # Loads *.names file at 'path'
     with open(path, 'r') as f:
@@ -81,12 +75,8 @@ def xywh2xyxy(x):
 
 def scale_coords(img1_shape, coords, img0_shape):
     # Rescale coords (xyxy) from img1_shape to img0_shape
-    gain = max(img1_shape) / max(img0_shape)  # gain  = old / new
-    coords[:, [0, 2]] -= (img1_shape[1] -
-                          img0_shape[1] * gain) / 2  # x padding
-    coords[:, [1, 3]] -= (img1_shape[0] -
-                          img0_shape[0] * gain) / 2  # y padding
-    coords[:, :4] /= gain
+    coords[:, [0, 2]] *= img0_shape[1] / img1_shape[1]
+    coords[:, [1, 3]] *= img0_shape[0] / img1_shape[0]
     clip_coords(coords, img0_shape)
     return coords
 
