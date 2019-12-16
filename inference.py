@@ -46,7 +46,7 @@ def inference(source,
     names = os.listdir(source)
     names.sort()
     for name in tqdm(names):
-        im0 = cv2.imread(os.path.join(source, name))[:, :1280, ]
+        im0 = cv2.imread(os.path.join(source, name))
         dets = detect(model, im0, (img_size, img_size), conf_thres, nms_thres)
         for det in dets:
             # Write results
