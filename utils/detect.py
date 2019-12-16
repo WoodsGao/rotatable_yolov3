@@ -5,6 +5,7 @@ from pytorch_modules.utils import device
 from .utils import non_max_suppression, scale_coords
 
 
+@torch.no_grad()
 def detect(model, img, img_size=(320, 320), conf_thres=0.3, nms_thres=0.5):
     im0 = img
     img = im0.copy()
