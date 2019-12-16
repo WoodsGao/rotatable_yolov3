@@ -7,18 +7,19 @@ import cv2
 import numpy as np
 import shutil
 from tqdm import tqdm
-from utils.models import *  # set ONNX_EXPORT in models.py
-from utils.utils import *
+from utils.models import YOLOV3  # set ONNX_EXPORT in models.py
+from utils.utils import plot_one_box
+from utils.detect import detect
 from pytorch_modules.utils import device, IMG_EXT
 
 
-def detect(source,
-           output,
-           weights,
-           img_size=320,
-           conf_thres=0.3,
-           nms_thres=0.5,
-           view_img=False):
+def inference(source,
+              output,
+              weights,
+              img_size=320,
+              conf_thres=0.3,
+              nms_thres=0.5,
+              view_img=False):
     img_size = int(img_size // 32 * 32)
     # Initialize
     if os.path.exists(output):
@@ -45,47 +46,23 @@ def detect(source,
     names = os.listdir(source)
     names.sort()
     for name in tqdm(names):
-        im0 = cv2.imread(os.path.join(source, name))
-        img = im0.copy()
-        new_shape = (img_size, img_size)
-        img = cv2.resize(img, new_shape)
-        img = img[:, :, ::-1]
-        img = img.transpose(2, 0, 1)
-        img = np.float32([img]) / 255.
-        img = torch.FloatTensor(img).to(device)
-        pred = model(img)[0]
+        im0 = cv2.imread(os.path.join(source, name))[:, :1280, ]
+        dets = detect(model, im0, (img_size, img_size), conf_thres, nms_thres)
+        for det in dets:
+            # Write results
+            for *xyxy, conf, _, cls in det:
+                with open(
+                        os.path.join(out_txt,
+                                     os.path.splitext(name)[0] + '.txt'),
+                        'a') as f:
+                    f.write(('%g ' * 6 + '\n') % (*xyxy, cls, conf))
 
-        # Apply NMS
-        pred = non_max_suppression(pred, conf_thres, nms_thres)
-
-        # Process detections
-        for i, det in enumerate(pred):  # detections per image
-
-            if det is not None and len(det):
-                # source image
-
-                # Rescale boxes from img_size to im0 size
-                det[:, :4] = scale_coords(img.shape[2:], det[:, :4],
-                                          im0.shape).round()
-
-                # Print results
-                for c in det[:, -1].unique():
-                    n = (det[:, -1] == c).sum()  # detections per class
-
-                # Write results
-                for *xyxy, conf, _, cls in det:
-                    with open(
-                            os.path.join(out_txt,
-                                         os.path.splitext(name)[0] + '.txt'),
-                            'a') as f:
-                        f.write(('%g ' * 6 + '\n') % (*xyxy, cls, conf))
-
-                    if view_img:  # Add bbox to image
-                        label = '%d %.2f' % (int(cls), conf)
-                        plot_one_box(xyxy,
-                                     im0,
-                                     label=label,
-                                     color=colors[int(cls)])
+                if view_img:  # Add bbox to image
+                    label = '%d %.2f' % (int(cls), conf)
+                    plot_one_box(xyxy,
+                                 im0,
+                                 label=label,
+                                 color=colors[int(cls)])
             # Stream results
             if view_img:
                 cv2.imshow('yolo', im0)
@@ -126,13 +103,12 @@ if __name__ == '__main__':
     opt = parser.parse_args()
     print(opt)
 
-    with torch.no_grad():
-        detect(
-            opt.source,
-            opt.output,
-            opt.weights,
-            img_size=opt.img_size,
-            conf_thres=opt.conf_thres,
-            nms_thres=opt.nms_thres,
-            view_img=opt.view_img,
-        )
+    inference(
+        opt.source,
+        opt.output,
+        opt.weights,
+        img_size=opt.img_size,
+        conf_thres=opt.conf_thres,
+        nms_thres=opt.nms_thres,
+        view_img=opt.view_img,
+    )
