@@ -17,17 +17,14 @@ def detect(model, img, img_size=(320, 320), conf_thres=0.3, nms_thres=0.5):
     pred = model(img)[0]
 
     # Apply NMS
-    pred = non_max_suppression(pred, conf_thres, nms_thres)
+    det = non_max_suppression(pred, conf_thres, nms_thres)[0]
 
-    dets = []
     # Process detections
-    for i, det in enumerate(pred):  # detections per image
+    if det is None:
+        det = []
+    if len(det):
 
-        if det is not None and len(det):
-            # source image
-
-            # Rescale boxes from img_size to im0 size
-            det[:, :4] = scale_coords(img.shape[2:], det[:, :4],
-                                      im0.shape).round()
-            dets.append(det)
-    return dets
+        # Rescale boxes from img_size to im0 size
+        det[:, :4] = scale_coords(img.shape[2:], det[:, :4],
+                                  im0.shape[:2]).round()
+    return det
