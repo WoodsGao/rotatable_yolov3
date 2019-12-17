@@ -47,28 +47,24 @@ def inference(source,
     names.sort()
     for name in tqdm(names):
         im0 = cv2.imread(os.path.join(source, name))
-        dets = detect(model, im0, (img_size, img_size), conf_thres, nms_thres)
-        for det in dets:
-            # Write results
-            for *xyxy, conf, _, cls in det:
-                with open(
-                        os.path.join(out_txt,
-                                     os.path.splitext(name)[0] + '.txt'),
-                        'a') as f:
-                    f.write(('%g ' * 6 + '\n') % (*xyxy, cls, conf))
+        det = detect(model, im0, (img_size, img_size), conf_thres, nms_thres)
+        # Write results
+        for *xyxy, conf, _, cls in det:
+            with open(
+                    os.path.join(out_txt,
+                                 os.path.splitext(name)[0] + '.txt'),
+                    'a') as f:
+                f.write(('%g ' * 6 + '\n') % (*xyxy, cls, conf))
 
-                if view_img:  # Add bbox to image
-                    label = '%d %.2f' % (int(cls), conf)
-                    plot_one_box(xyxy,
-                                 im0,
-                                 label=label,
-                                 color=colors[int(cls)])
-            # Stream results
-            if view_img:
-                cv2.imshow('yolo', im0)
-                cv2.waitKey(1)
-            # Save results (image with detections)
-            cv2.imwrite(os.path.join(output, name), im0)
+            if view_img:  # Add bbox to image
+                label = '%d %.2f' % (int(cls), conf)
+                plot_one_box(xyxy, im0, label=label, color=colors[int(cls)])
+        # Stream results
+        if view_img:
+            cv2.imshow('yolo', im0)
+            cv2.waitKey(1)
+        # Save results (image with detections)
+        cv2.imwrite(os.path.join(output, name), im0)
 
 
 if __name__ == '__main__':
