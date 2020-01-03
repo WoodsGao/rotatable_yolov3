@@ -1,5 +1,6 @@
 from sklearn.cluster import KMeans
 import os
+import os.path as osp
 import numpy as np
 from tqdm import tqdm
 import argparse
@@ -7,10 +8,10 @@ import argparse
 
 def kmeans_anchor(label_dir, n_clusters=9, img_size=(320, 180)):
     names = os.listdir(label_dir)
-    names = [name for name in names if os.path.splitext(name)[-1] == '.txt']
+    names = [name for name in names if osp.splitext(name)[-1] == '.txt']
     wh_list = []
     for name in tqdm(names):
-        with open(os.path.join(label_dir, name), 'r') as f:
+        with open(osp.join(label_dir, name), 'r') as f:
             lines = f.read().split('\n')
             lines = [l.split(' ') for l in lines]
         for line in lines:

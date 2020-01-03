@@ -4,4 +4,4 @@ torch>=1.0
 tqdm
 tensorflow
 tensorboard
-pytorch-modules==0.1.1
+pytorch-modules>=0.2.5

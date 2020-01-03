@@ -1,11 +1,13 @@
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint
 import numpy as np
-from pytorch_modules.nn import CNS, Swish, BiFPN, SeparableCNS
-from pytorch_modules.backbones import BasicModel, EfficientNet
-
-ONNX_EXPORT = False
+from pytorch_modules.nn import ConvNormAct, Swish, BiFPN, SeparableConvNormAct, SeparableConv, Identity, DropConnect
+from pytorch_modules.backbones import initialize_weights, imagenet_normalize
+from pytorch_modules.backbones.efficientnet import efficientnet
+from pytorch_modules.backbones.resnet import resnet50, resnext50_32x4d
 
 
 class YOLOLayer(nn.Module):
@@ -18,19 +20,19 @@ class YOLOLayer(nn.Module):
         self.nx = 0  # initialize number of x gridpoints
         self.ny = 0  # initialize number of y gridpoints
 
-        if ONNX_EXPORT:  # grids must be computed in __init__
-            stride = [32, 16, 8][yolo_index]  # stride of this layer
-            nx = int(img_size[1] / stride)  # number x grid points
-            ny = int(img_size[0] / stride)  # number y grid points
-            create_grids(self, img_size, (nx, ny))
+        # if ONNX_EXPORT:  # grids must be computed in __init__
+        #     stride = [32, 16, 8][yolo_index]  # stride of this layer
+        #     nx = int(img_size[1] / stride)  # number x grid points
+        #     ny = int(img_size[0] / stride)  # number y grid points
+        #     create_grids(self, img_size, (nx, ny))
 
-    def forward(self, p, img_size, var=None):
-        if ONNX_EXPORT:
-            bs = 1  # batch size
-        else:
-            bs, ny, nx = p.shape[0], p.shape[-2], p.shape[-1]
-            if (self.nx, self.ny) != (nx, ny):
-                create_grids(self, img_size, (nx, ny), p.device, p.dtype)
+    def forward(self, p, img_size):
+        # if ONNX_EXPORT:
+        #     bs = 1  # batch size
+        # else:
+        bs, ny, nx = p.shape[0], p.shape[-2], p.shape[-1]
+        if (self.nx, self.ny) != (nx, ny):
+            create_grids(self, img_size, (nx, ny), p.device, p.dtype)
 
         # p.view(bs, 255, 13, 13) -- > (bs, 3, 13, 13, 85)  # (bs, anchors, grid, grid, classes + xywh)
         p = p.view(bs, self.na, self.nc + 5, self.ny,
@@ -39,32 +41,32 @@ class YOLOLayer(nn.Module):
         if self.training:
             return p
 
-        elif ONNX_EXPORT:
-            # Constants CAN NOT BE BROADCAST, ensure correct shape!
-            ngu = self.ng.repeat((1, self.na * self.nx * self.ny, 1))
-            grid_xy = self.grid_xy.repeat((1, self.na, 1, 1, 1)).view(
-                (1, -1, 2))
-            anchor_wh = self.anchor_wh.repeat(
-                (1, 1, self.nx, self.ny, 1)).view((1, -1, 2)) / ngu
+        # elif ONNX_EXPORT:
+        #     # Constants CAN NOT BE BROADCAST, ensure correct shape!
+        #     ngu = self.ng.repeat((1, self.na * self.nx * self.ny, 1))
+        #     grid_xy = self.grid_xy.repeat((1, self.na, 1, 1, 1)).view(
+        #         (1, -1, 2))
+        #     anchor_wh = self.anchor_wh.repeat(
+        #         (1, 1, self.nx, self.ny, 1)).view((1, -1, 2)) / ngu
 
-            p = p.view(-1, 5 + self.nc)
-            xy = torch.sigmoid(p[..., 0:2]) + grid_xy[0]  # x, y
-            wh = torch.exp(p[..., 2:4]) * anchor_wh[0]  # width, height
-            p_conf = torch.sigmoid(p[:, 4:5])  # Conf
-            p_cls = F.softmax(p[:, 5:85], 1) * p_conf  # SSD-like conf
-            return torch.cat((xy / ngu[0], wh, p_conf, p_cls), 1).t()
+        #     p = p.view(-1, 5 + self.nc)
+        #     xy = torch.sigmoid(p[..., 0:2]) + grid_xy[0]  # x, y
+        #     wh = torch.exp(p[..., 2:4]) * anchor_wh[0]  # width, height
+        #     p_conf = torch.sigmoid(p[:, 4:5])  # Conf
+        #     p_cls = F.softmax(p[:, 5:85], 1) * p_conf  # SSD-like conf
+        #     return torch.cat((xy / ngu[0], wh, p_conf, p_cls), 1).t()
 
-            # p = p.view(1, -1, 5 + self.nc)
-            # xy = torch.sigmoid(p[..., 0:2]) + grid_xy  # x, y
-            # wh = torch.exp(p[..., 2:4]) * anchor_wh  # width, height
-            # p_conf = torch.sigmoid(p[..., 4:5])  # Conf
-            # p_cls = p[..., 5:5 + self.nc]
-            # # Broadcasting only supported on first dimension in CoreML. See onnx-coreml/_operators.py
-            # # p_cls = F.softmax(p_cls, 2) * p_conf  # SSD-like conf
-            # p_cls = torch.exp(p_cls).permute((2, 1, 0))
-            # p_cls = p_cls / p_cls.sum(0).unsqueeze(0) * p_conf.permute((2, 1, 0))  # F.softmax() equivalent
-            # p_cls = p_cls.permute(2, 1, 0)
-            # return torch.cat((xy / ngu, wh, p_conf, p_cls), 2).squeeze().t()
+        # p = p.view(1, -1, 5 + self.nc)
+        # xy = torch.sigmoid(p[..., 0:2]) + grid_xy  # x, y
+        # wh = torch.exp(p[..., 2:4]) * anchor_wh  # width, height
+        # p_conf = torch.sigmoid(p[..., 4:5])  # Conf
+        # p_cls = p[..., 5:5 + self.nc]
+        # # Broadcasting only supported on first dimension in CoreML. See onnx-coreml/_operators.py
+        # # p_cls = F.softmax(p_cls, 2) * p_conf  # SSD-like conf
+        # p_cls = torch.exp(p_cls).permute((2, 1, 0))
+        # p_cls = p_cls / p_cls.sum(0).unsqueeze(0) * p_conf.permute((2, 1, 0))  # F.softmax() equivalent
+        # p_cls = p_cls.permute(2, 1, 0)
+        # return torch.cat((xy / ngu, wh, p_conf, p_cls), 2).squeeze().t()
 
         else:  # inference
             # s = 1.5  # scale_xy  (pxy = pxy * s - (s - 1) / 2)
@@ -85,30 +87,33 @@ class YOLOLayer(nn.Module):
             return io.view(bs, -1, 5 + self.nc), p
 
 
-class YOLOV3(BasicModel):
+class YOLOV3(nn.Module):
     # YOLOv3 object detection model
 
     def __init__(self,
                  num_classes,
                  img_size=(416, 416),
-                 anchors=[[[28, 46], [21, 57], [15, 67]],
-                          [[24, 35], [18, 43], [15, 34]],
-                          [[27, 18], [13, 20], [8, 8]]],
-                 model_id=0):
+                 anchors=[
+                     [[116, 90], [156, 198], [373, 326]],
+                     [[30, 61], [62, 45], [59, 119]],
+                     [[10, 13], [16, 30], [33, 23]],
+                 ]):
         super(YOLOV3, self).__init__()
-        self.backbone = EfficientNet(model_id)
-        width = int(8 * (1.35**model_id)) * 8
-        self.fpn = BiFPN(self.backbone.out_channels[2:], width, model_id + 2)
-        self.final = []
-        self.yolo_layers = []
+        self.stages = efficientnet(2, pretrained=True).stages
+
+        width = 256
+        planes_list = [48, 120, 352]
+        self.fpn = BiFPN(planes_list, width, 4)
+        self.head = nn.ModuleList([])
+        self.yolo_layers = nn.ModuleList([])
         for i in range(3):
-            final = []
-            for j in range(3 + model_id // 3):
-                final.append(SeparableCNS(width, width))
-            final.append(
+            head = []
+            for j in range(3):
+                head.append(SeparableConvNormAct(width, width))
+            head.append(
                 nn.Conv2d(width,
-                          len(anchors[i]) * (5 + num_classes), 1))
-            self.final.append(nn.Sequential(*final))
+                              len(anchors[i]) * (5 + num_classes), 1))
+            self.head.append(nn.Sequential(*head))
             self.yolo_layers.append(
                 YOLOLayer(
                     anchors=np.float32(anchors[i]),  # anchor list
@@ -117,39 +122,40 @@ class YOLOV3(BasicModel):
                     yolo_index=i,  # 0, 1 or 2
                 )  # yolo architecture)
             )
-        self.final = nn.ModuleList(self.final)
-        self.yolo_layers = nn.ModuleList(self.yolo_layers)
+        initialize_weights(self.fpn)
+        initialize_weights(self.head)
+        # self.fuse_bn(self.stages)
 
-        self.init()
-
-    def forward(self, x, var=None):
+    def forward(self, x):
+        x = imagenet_normalize(x)
         img_size = x.shape[-2:]
+
         features = []
-        x = self.backbone.block1(x)
-        x = self.backbone.block2(x)
-        x = self.backbone.block3(x)
+        x = self.stages[0](x)
+        x = self.stages[1](x)
+        x = self.stages[2](x)
         features.append(x)
-        x = self.backbone.block4(x)
+        x = self.stages[3](x)
         features.append(x)
-        x = self.backbone.block5(x)
+        x = self.stages[4](x)
         features.append(x)
         features = self.fpn(features)
-        features = [
-            final(feature) for feature, final in zip(features, self.final)
-        ]
         features.reverse()
+        features = [
+            head(feature) for feature, head in zip(features, self.head)
+        ]
         output = [
             yolo(feature, img_size)
             for feature, yolo in zip(features, self.yolo_layers)
         ]
         if self.training:
-            return output
-        elif ONNX_EXPORT:
-            output = torch.cat(
-                output, 1)  # cat 3 layers 85 x (507, 2028, 8112) to 85 x 10647
-            nc = self.module_list[
-                self.yolo_layers_layers[0]].nc  # number of classes
-            return output[5:5 + nc].t(), output[:4].t()  # ONNX scores, boxes
+            return tuple(output)
+        # elif ONNX_EXPORT:
+        #     output = torch.cat(
+        #         output, 1)  # cat 3 layers 85 x (507, 2028, 8112) to 85 x 10647
+        #     nc = self.module_list[
+        #         self.yolo_layers_layers[0]].nc  # number of classes
+        #     return output[5:5 + nc].t(), output[:4].t()  # ONNX scores, boxes
         else:
             io, p = list(zip(*output))  # inference output, training output
             return torch.cat(io, 1), p

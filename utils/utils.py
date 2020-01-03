@@ -284,24 +284,24 @@ def compute_loss(p, targets, model):  # predictions, targets, model
         bce = BCE(pi[..., 4], tobj)
         lobj += bce  # obj loss
 
-    lbox *= 3.31 
+    lbox *= 3.31
     lobj *= 42.4
-    lcls *= 40. 
+    lcls *= 40.
     loss = lbox + lobj + lcls
     return loss
 
+
 def build_targets(model, targets):
     # targets = [image, class, x, y, w, h]
-
+    if dist.is_initialized():
+        yolo_layers = model.module.yolo_layers
+    else:
+        yolo_layers = model.yolo_layers
     nt = len(targets)
     tcls, tbox, indices, av = [], [], [], []
-    for i in model.yolo_layers:
+    for i in yolo_layers:
         # get number of grid points and anchor vec for this yolo layer
-        if dist.is_initialized():
-            ng, anchor_vec = model.module.module_list[
-                i].ng, model.module.module_list[i].anchor_vec
-        else:
-            ng, anchor_vec = i.ng, i.anchor_vec
+        ng, anchor_vec = i.ng, i.anchor_vec
 
         # iou of targets-anchors
         t, a = targets, []

@@ -1,12 +1,18 @@
+import os.path as osp
 import argparse
 import torch
+import torch.distributed as dist
 import numpy as np
 from tqdm import tqdm
 from utils.models import YOLOV3
+from utils.datasets import DetDataset
+from torch.utils.data import DataLoader
+from pytorch_modules.utils import device, Fetcher
 from pytorch_modules.utils import device
 from utils.utils import compute_loss, non_max_suppression, clip_coords, xywh2xyxy, bbox_iou, ap_per_class
 
 
+@torch.no_grad()
 def test(model, fetcher, conf_thres=1e-3, nms_thres=0.5):
     model.eval()
     val_loss = 0
@@ -18,24 +24,24 @@ def test(model, fetcher, conf_thres=1e-3, nms_thres=0.5):
     p, r, f1, mp, mr, map, mf1 = 0., 0., 0., 0., 0., 0., 0.
     jdict, stats, ap, ap_class = [], [], [], []
     pbar = tqdm(enumerate(fetcher), total=len(fetcher))
-    for batch_i, (imgs, targets) in pbar:
+    for batch_idx, (imgs, targets) in pbar:
         _, _, height, width = imgs.shape  # batch size, channels, height, width
 
         # Plot images with bounding boxes
-        # if batch_i == 0 and not os.path.exists('test_batch0.jpg'):
+        # if batch_idx == 0 and not osp.exists('test_batch0.jpg'):
         #     plot_images(imgs=imgs, targets=targets, paths=paths, fname='test_batch0.jpg')
 
         # Run model
         inf_out, train_out = model(imgs)  # inference and training outputs
 
         # Compute loss
-        val_loss += compute_loss(train_out,
-                                    targets, model).item()  # GIoU, obj, cls
+        val_loss += compute_loss(train_out, targets,
+                                 model).item()  # GIoU, obj, cls
 
         # Run NMS
         output = non_max_suppression(inf_out,
-                                        conf_thres=conf_thres,
-                                        nms_thres=nms_thres)
+                                     conf_thres=conf_thres,
+                                     nms_thres=nms_thres)
 
         # Statistics per image
         for si, pred in enumerate(output):
@@ -46,8 +52,7 @@ def test(model, fetcher, conf_thres=1e-3, nms_thres=0.5):
 
             if pred is None:
                 if nl:
-                    stats.append(
-                        ([], torch.Tensor(), torch.Tensor(), tcls))
+                    stats.append(([], torch.Tensor(), torch.Tensor(), tcls))
                 continue
 
             # Append to text file
@@ -90,8 +95,8 @@ def test(model, fetcher, conf_thres=1e-3, nms_thres=0.5):
                         detected.append(m[bi])
 
             # Append statistics (correct, conf, pcls, tcls)
-            stats.append(
-                (correct, pred[:, 4].cpu(), pred[:, 6].cpu(), tcls))
+            stats.append((correct, pred[:, 4].cpu(), pred[:, 6].cpu(), tcls))
+        pbar.set_description('loss: %8g' % (val_loss / (batch_idx + 1)))
 
     # Compute statistics
     stats = [np.concatenate(x, 0) for x in list(zip(*stats))]
@@ -121,27 +126,12 @@ def test(model, fetcher, conf_thres=1e-3, nms_thres=0.5):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(prog='test.py')
-    parser.add_argument('--cfg',
-                        type=str,
-                        default='cfg/yolov3-spp.cfg',
-                        help='cfg file path')
-    parser.add_argument('--data',
-                        type=str,
-                        default='data/coco.data',
-                        help='coco.data file path')
-    parser.add_argument('--weights',
-                        type=str,
-                        default='weights/yolov3-spp.weights',
-                        help='path to weights file')
-    parser.add_argument('--batch-size',
-                        type=int,
-                        default=16,
-                        help='size of each image batch')
-    parser.add_argument('--img-size',
-                        type=int,
-                        default=416,
-                        help='inference size (pixels)')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--val-list', type=str, default='data/voc/valid.txt')
+    parser.add_argument('--img-size', type=str, default='512')
+    parser.add_argument('--batch-size', type=int, default=4)
+    parser.add_argument('--weights', type=str, default='')
+    parser.add_argument('--num-workers', type=int, default=4)
     parser.add_argument('--iou-thres',
                         type=float,
                         default=0.5,
@@ -154,15 +144,26 @@ if __name__ == '__main__':
                         type=float,
                         default=0.5,
                         help='iou threshold for non-maximum suppression')
-    parser.add_argument('--save-json',
-                        action='store_true',
-                        help='save a cocoapi-compatible JSON results file')
-    parser.add_argument('--device',
-                        default='',
-                        help='device id (i.e. 0 or 0,1) or cpu')
     opt = parser.parse_args()
-    print(opt)
 
-    with torch.no_grad():
-        test(opt.cfg, opt.data, opt.weights, opt.batch_size, opt.img_size,
-             opt.iou_thres, opt.conf_thres, opt.nms_thres, opt.save_json)
+    img_size = opt.img_size.split(',')
+    assert len(img_size) in [1, 2]
+    if len(img_size) == 1:
+        img_size = [int(img_size[0])] * 2
+    else:
+        img_size = [int(x) for x in img_size]
+
+    val_data = DetDataset(opt.val_list, img_size=tuple(img_size))
+    val_loader = DataLoader(
+        val_data,
+        batch_size=opt.batch_size,
+        pin_memory=True,
+        num_workers=opt.num_workers,
+    )
+    val_fetcher = Fetcher(val_loader, post_fetch_fn=val_data.post_fetch_fn)
+    model = YOLOV3(80)
+    if opt.weights:
+        state_dict = torch.load(opt.weights, map_location='cpu')
+        model.load_state_dict(state_dict['model'])
+    metrics = test(model, val_fetcher, conf_thres=opt.conf_thres, nms_thres=opt.nms_thres)
+    print('metrics: %8g' % (metrics))
