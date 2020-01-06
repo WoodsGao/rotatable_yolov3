@@ -13,7 +13,7 @@ from pytorch_modules.utils import device, IMG_EXT
 
 
 def run(img_dir='data/samples',
-        img_size=(512, 512),
+        img_size=(416, 416),
         num_classes=80,
         output_dir='outputs',
         weights='weights/best.pt',
@@ -22,7 +22,7 @@ def run(img_dir='data/samples',
         show=False):
     shutil.rmtree(output_dir, ignore_errors=True)
     os.makedirs(output_dir, exist_ok=True)
-    model = YOLOV3(num_classes, (img_size, img_size))
+    model = YOLOV3(num_classes, img_size)
     state_dict = torch.load(weights, map_location='cpu')
     model.load_state_dict(state_dict['model'])
     model = model.to(device)
@@ -32,8 +32,8 @@ def run(img_dir='data/samples',
     names.sort()
     for name in tqdm(names):
         img = cv2.imread(osp.join(img_dir, name))
-        det = inference(model, img, (img_size, img_size), conf_thres,
-                        nms_thres)
+        det = inference(model, [img], img_size, conf_thres,
+                        nms_thres)[0]
         det_txt = []
         # Write results
         for *xyxy, conf, _, cls in det:
@@ -49,14 +49,14 @@ def run(img_dir='data/samples',
             cv2.imshow('yolo', img)
             cv2.waitKey(1)
         # Save results (image with detections)
-        cv2.imwrite(osp.join(output, name), img)
+        cv2.imwrite(osp.join(output_dir, name), img)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--src', type=str, default='data/samples')
     parser.add_argument('--dst', type=str, default='outputs')
-    parser.add_argument('--img-size', type=str, default='512')
+    parser.add_argument('--img-size', type=str, default='416')
     parser.add_argument('--num-classes', type=int, default=80)
     parser.add_argument('--weights', type=str, default='weights/best.pt')
     parser.add_argument('--conf-thres',
