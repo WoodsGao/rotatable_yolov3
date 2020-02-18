@@ -5,9 +5,8 @@ import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint
 import numpy as np
 from pytorch_modules.nn import ConvNormAct, Swish, BiFPN, SeparableConvNormAct, SeparableConv, Identity, DropConnect
-from pytorch_modules.backbones import initialize_weights, imagenet_normalize
-from pytorch_modules.backbones.efficientnet import efficientnet
-from pytorch_modules.backbones.resnet import resnet50, resnext50_32x4d
+from pytorch_modules.backbones import imagenet_normalize, efficientnet, resnet50, resnext50_32x4d
+from pytorch_modules.utils import initialize_weights
 
 
 class YOLOLayer(nn.Module):
