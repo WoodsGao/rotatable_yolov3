@@ -5,7 +5,7 @@ import torch.distributed as dist
 import numpy as np
 from tqdm import tqdm
 from utils.models import YOLOV3
-from utils.datasets import DetDataset
+from utils.datasets import CocoDataset
 from torch.utils.data import DataLoader
 from pytorch_modules.utils import device, Fetcher
 from pytorch_modules.utils import device
@@ -153,7 +153,7 @@ if __name__ == '__main__':
     else:
         img_size = [int(x) for x in img_size]
 
-    val_data = DetDataset(opt.val_list, img_size=tuple(img_size))
+    val_data = CocoDataset(opt.val_list, img_size=tuple(img_size))
     val_loader = DataLoader(
         val_data,
         batch_size=opt.batch_size,

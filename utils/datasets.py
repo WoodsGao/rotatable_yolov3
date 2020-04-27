@@ -1,14 +1,14 @@
 import os
 import os.path as osp
 import random
+import json
 import numpy as np
 import cv2
 import torch
 import torch.nn.functional as F
 from imgaug import augmenters as ia
-from imgaug.augmentables.bbs import BoundingBox, BoundingBoxesOnImage
+from imgaug.augmentables.polys import Polygon, PolygonsOnImage
 from pytorch_modules.utils import IMG_EXT
-from pytorch_modules.datasets import LMDBCacheDataset
 
 TRAIN_AUGS = ia.SomeOf(
     [0, 3],
@@ -57,7 +57,115 @@ TRAIN_AUGS = ia.SomeOf(
     random_state=True)
 
 
-class DetDataset(LMDBCacheDataset):
+class BasicDataset(torch.utils.data.Dataset):
+    def __init__(self, img_size, augments, multi_scale, rect):
+        super(BasicDataset, self).__init__()
+        if isinstance(img_size, int):
+            img_size = (img_size, img_size)
+        assert len(img_size) == 2
+        self.img_size = img_size
+        self.rect = rect
+        self.multi_scale = multi_scale
+        self.augments = augments
+        self.data = []
+
+    def get_data(self, idx):
+        return None, None
+
+    def __getitem__(self, idx):
+        img, polygons = self.get_data(idx)
+        img = img[..., ::-1]
+        h, w, c = img.shape
+
+        if self.rect:
+            resize = ia.Resize(self.img_size)
+        else:
+            scale = min(self.img_size[0] / w, self.img_size[1] / h)
+            resize = ia.Sequential([
+                ia.Resize((int(w * scale), int(h * scale))),
+                ia.PadToFixedSize(*self.img_size)
+            ])
+        img = resize.augment_image(img)
+        polygons = resize.augment_polygons(polygons)
+        # augment
+        if self.augments is not None:
+            augments = self.augments.to_deterministic()
+            img = augments.augment_image(img)
+            polygons = augments.augment_polygons(polygons)
+
+        img = img.transpose(2, 0, 1)
+        img = np.ascontiguousarray(img)
+
+        bboxes = []
+        for polygon in polygons.polygons:
+            p = polygon.exterior.reshape(2, -1)
+            p[0] /= img.shape[1]
+            p[1] /= img.shape[0]
+            p = p.clip(0, 1)
+            x1 = p[0].min()
+            x2 = p[0].max()
+            y1 = p[1].min()
+            y2 = p[1].max()
+            c = polygon.label
+            x = (x1 + x2) / 2
+            y = (y1 + y2) / 2
+            w = x2 - x1
+            h = y2 - y1
+            bboxes.append([0, c, x, y, w, h])
+        if len(bboxes):
+            bboxes = np.float32(bboxes)
+        else:
+            bboxes = np.zeros([0, 6], dtype=np.float32)
+        
+        return torch.ByteTensor(img), torch.FloatTensor(bboxes)
+
+    def __len__(self):
+        return len(self.data)
+
+    @staticmethod
+    def collate_fn(batch):
+        imgs, dets = list(zip(*batch))  # transposed
+
+        for i, l in enumerate(dets):
+            l[:, 0] = i  # add target image index for build_targets()
+        dets = torch.cat(dets, 0)
+        imgs = torch.stack(imgs, 0)
+        return imgs, dets
+
+    def post_fetch_fn(self, batch):
+        imgs, labels = batch
+        imgs = imgs.float()
+        imgs -= torch.FloatTensor([123.675, 116.28,
+                                   103.53]).reshape(1, 3, 1, 1).to(imgs.device)
+        imgs /= torch.FloatTensor([58.395, 57.12,
+                                   57.375]).reshape(1, 3, 1, 1).to(imgs.device)
+
+        if self.multi_scale:
+            h = imgs.size(2)
+            w = imgs.size(3)
+            scale = random.uniform(0.7, 1.5)
+            h = int(h * scale / 32) * 32
+            w = int(w * scale / 32) * 32
+            imgs = F.interpolate(imgs, (h, w))
+        return (imgs, labels)
+
+
+class YOLODataset(BasicDataset):
+    def __init__(self,
+                 path,
+                 img_size=224,
+                 augments=TRAIN_AUGS,
+                 multi_scale=False,
+                 rect=True):
+        super(YOLODataset, self).__init__(img_size=img_size,
+                                          augments=augments,
+                                          multi_scale=multi_scale,
+                                          rect=rect)
+        self.path = path
+        self.classes = []
+        self.build_data()
+        self.data.sort()
+
     def build_data(self):
         data_dir = osp.dirname(self.path)
         with open(osp.join(data_dir, 'classes.names'), 'r') as f:
@@ -96,76 +204,60 @@ class DetDataset(LMDBCacheDataset):
                     bboxes.append([c, xmin, ymin, xmax, ymax])
             self.data.append([osp.join(image_dir, name), bboxes])
 
-    def get_item(self, idx):
+    def get_data(self, idx):
         img = cv2.imread(self.data[idx][0])
-        h, w, c = img.shape
-        if len(self.data[idx][1]):
-            bboxes = np.float32(self.data[idx][1])
-        else:
-            bboxes = np.zeros([0, 5])
+        polygons = []
+        for c, xmin, ymin, xmax, ymax in self.data[idx][1]:
+            polygons.append(
+                Polygon(
+                    np.float32(
+                        [xmin, ymin, xmin, ymax, xmax, ymax, xmax,
+                         ymin]).reshape(-1, 2), c))
+        polygons = PolygonsOnImage(polygons, img.shape)
 
-        classes = bboxes[:, 0]
-        zeros = np.zeros_like(classes)
-        bboxes = BoundingBoxesOnImage([
-            BoundingBox(x1=int(b[0] * w),
-                        y1=int(b[1] * h),
-                        x2=int(b[2] * w),
-                        y2=int(b[3] * h)) for b in bboxes[:, 1:]
-        ],
-                                      shape=img.shape)
-        resize = self.resize.to_deterministic()
-        img = resize.augment_image(img)
-        bboxes = resize.augment_bounding_boxes(bboxes)
 
-        # augment
-        if self.augments is not None:
-            augments = self.augments.to_deterministic()
-            img = augments.augment_image(img)
-            bboxes = augments.augment_bounding_boxes(bboxes)
-            # print(bboxes)
-            # image_after = bboxes.draw_on_image(img, thickness=2, color=[0, 0, 255])
-            # cv2.imshow('a', image_after)
-            # cv2.waitKey(0)
+class CocoDataset(BasicDataset):
+    def __init__(self,
+                 path,
+                 img_size=224,
+                 augments=TRAIN_AUGS,
+                 multi_scale=False,
+                 rect=True):
+        super(CocoDataset, self).__init__(img_size=img_size,
+                                          augments=augments,
+                                          multi_scale=multi_scale,
+                                          rect=rect)
+        with open(path, 'r') as f:
+            self.coco = json.loads(f.read())
+        self.img_root = osp.dirname(path)
+        self.augments = augments
+        self.classes = []
+        self.build_data()
+        self.data.sort()
 
-        bboxes = bboxes.to_xyxy_array()
-        bboxes[:, 0] /= img.shape[1]
-        bboxes[:, 2] /= img.shape[1]
-        bboxes[:, 1] /= img.shape[0]
-        bboxes[:, 3] /= img.shape[0]
-        bboxes = bboxes.clip(0, 1)
+    def build_data(self):
+        img_ids = []
+        img_paths = []
+        img_anns = []
+        self.classes = [c['name'] for c in self.coco['categories']]
+        for img_info in self.coco['images']:
+            img_ids.append(img_info['id'])
+            img_paths.append(osp.join(self.img_root, img_info['file_name']))
+            img_anns.append([])
+        for ann in self.coco['annotations']:
+            idx = ann['image_id']
+            idx = img_ids.index(idx)
+            img_anns[idx].append(ann)
+        self.data = list(zip(img_paths, img_anns))
 
-        x = (bboxes[:, 0] + bboxes[:, 2]) / 2.
-        y = (bboxes[:, 1] + bboxes[:, 3]) / 2.
-        w = (bboxes[:, 2] - bboxes[:, 0])
-        h = (bboxes[:, 3] - bboxes[:, 1])
-
-        bboxes = np.stack([zeros, classes, x, y, w, h], 1)
-
-        img = img.transpose(2, 0, 1)
-        img = np.ascontiguousarray(img)
-
-        return torch.ByteTensor(img), torch.FloatTensor(bboxes)
-
-    @staticmethod
-    def collate_fn(batch):
-        imgs, dets = list(zip(*batch))  # transposed
-
-        for i, l in enumerate(dets):
-            l[:, 0] = i  # add target image index for build_targets()
-        dets = torch.cat(dets, 0)
-        imgs = torch.stack(imgs, 0)
-        return imgs, dets
-
-    def post_fetch_fn(self, batch):
-        imgs, labels = batch
-        imgs = imgs.float()
-        imgs /= 255.
-        
-        if self.multi_scale:
-            h = imgs.size(2)
-            w = imgs.size(3)
-            scale = random.uniform(0.7, 1.5)
-            h = int(h * scale / 16) * 16
-            w = int(w * scale / 16) * 16
-            imgs = F.interpolate(imgs, (h, w))
-        return (imgs, labels)
+    def get_data(self, idx):
+        img = cv2.imread(self.data[idx][0])
+        anns = self.data[idx][1]
+        polygons = []
+        for ann in anns:
+            polygons.append(
+                Polygon(
+                    np.float32(
+                        ann['segmentation']).reshape(-1, 2), ann['category_id']))
+        polygons = PolygonsOnImage(polygons, img.shape)
+        return img, polygons

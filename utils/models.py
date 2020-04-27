@@ -2,10 +2,9 @@ import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.checkpoint import checkpoint
 import numpy as np
-from pytorch_modules.nn import ConvNormAct, Swish, BiFPN, SeparableConvNormAct, SeparableConv, Identity, DropConnect
-from pytorch_modules.backbones import imagenet_normalize, efficientnet, resnet50, resnext50_32x4d
+from pytorch_modules.nn import ConvNormAct, FPN
+from pytorch_modules.backbones import resnet50
 from pytorch_modules.utils import initialize_weights
 
 
@@ -19,16 +18,7 @@ class YOLOLayer(nn.Module):
         self.nx = 0  # initialize number of x gridpoints
         self.ny = 0  # initialize number of y gridpoints
 
-        # if ONNX_EXPORT:  # grids must be computed in __init__
-        #     stride = [32, 16, 8][yolo_index]  # stride of this layer
-        #     nx = int(img_size[1] / stride)  # number x grid points
-        #     ny = int(img_size[0] / stride)  # number y grid points
-        #     create_grids(self, img_size, (nx, ny))
-
     def forward(self, p, img_size):
-        # if ONNX_EXPORT:
-        #     bs = 1  # batch size
-        # else:
         bs, ny, nx = p.shape[0], p.shape[-2], p.shape[-1]
         if (self.nx, self.ny) != (nx, ny):
             create_grids(self, img_size, (nx, ny), p.device, p.dtype)
@@ -39,21 +29,6 @@ class YOLOLayer(nn.Module):
 
         if self.training:
             return p
-
-        # elif ONNX_EXPORT:
-        #     # Constants CAN NOT BE BROADCAST, ensure correct shape!
-        #     ngu = self.ng.repeat((1, self.na * self.nx * self.ny, 1))
-        #     grid_xy = self.grid_xy.repeat((1, self.na, 1, 1, 1)).view(
-        #         (1, -1, 2))
-        #     anchor_wh = self.anchor_wh.repeat(
-        #         (1, 1, self.nx, self.ny, 1)).view((1, -1, 2)) / ngu
-
-        #     p = p.view(-1, 5 + self.nc)
-        #     xy = torch.sigmoid(p[..., 0:2]) + grid_xy[0]  # x, y
-        #     wh = torch.exp(p[..., 2:4]) * anchor_wh[0]  # width, height
-        #     p_conf = torch.sigmoid(p[:, 4:5])  # Conf
-        #     p_cls = F.softmax(p[:, 5:85], 1) * p_conf  # SSD-like conf
-        #     return torch.cat((xy / ngu[0], wh, p_conf, p_cls), 1).t()
 
         # p = p.view(1, -1, 5 + self.nc)
         # xy = torch.sigmoid(p[..., 0:2]) + grid_xy  # x, y
@@ -98,35 +73,33 @@ class YOLOV3(nn.Module):
                      [[10, 13], [16, 30], [33, 23]],
                  ]):
         super(YOLOV3, self).__init__()
-        self.stages = efficientnet(2, pretrained=True).stages
+        self.stages = resnet50(pretrained=True).stages
 
+        depth = 3
         width = 256
-        planes_list = [48, 120, 352]
-        self.fpn = BiFPN(planes_list, width, 4)
+        planes_list = [512, 1024, 2048]
+        self.fpn = FPN(planes_list, width, 3)
         self.head = nn.ModuleList([])
         self.yolo_layers = nn.ModuleList([])
         for i in range(3):
             head = []
-            for j in range(3):
-                head.append(SeparableConvNormAct(width, width))
+            for j in range(depth - 1):
+                head.append(ConvNormAct(width, width))
             head.append(
                 nn.Conv2d(width,
-                              len(anchors[i]) * (5 + num_classes), 1))
+                          len(anchors[i]) * (5 + num_classes), 1))
             self.head.append(nn.Sequential(*head))
             self.yolo_layers.append(
                 YOLOLayer(
-                    anchors=np.float32(anchors[i]),  # anchor list
-                    nc=num_classes,  # number of classes
-                    img_size=img_size,  # (416, 416)
-                    yolo_index=i,  # 0, 1 or 2
-                )  # yolo architecture)
-            )
+                    anchors=np.float32(anchors[i]),
+                    nc=num_classes,
+                    img_size=img_size,
+                    yolo_index=i,
+                ))
         initialize_weights(self.fpn)
         initialize_weights(self.head)
-        # self.fuse_bn(self.stages)
 
     def forward(self, x):
-        x = imagenet_normalize(x)
         img_size = x.shape[-2:]
 
         features = []
