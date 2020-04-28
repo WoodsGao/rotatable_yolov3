@@ -1,13 +1,15 @@
+import json
 import os
 import os.path as osp
 import random
-import json
-import numpy as np
+
 import cv2
+import numpy as np
 import torch
 import torch.nn.functional as F
 from imgaug import augmenters as ia
 from imgaug.augmentables.polys import Polygon, PolygonsOnImage
+
 from pytorch_modules.utils import IMG_EXT
 
 TRAIN_AUGS = ia.SomeOf(
@@ -94,12 +96,9 @@ class BasicDataset(torch.utils.data.Dataset):
             img = augments.augment_image(img)
             polygons = augments.augment_polygons(polygons)
 
-        img = img.transpose(2, 0, 1)
-        img = np.ascontiguousarray(img)
-
         bboxes = []
         for polygon in polygons.polygons:
-            p = polygon.exterior.reshape(2, -1)
+            p = polygon.exterior.reshape(-1, 2).transpose(1, 0)
             p[0] /= img.shape[1]
             p[1] /= img.shape[0]
             p = p.clip(0, 1)
@@ -117,7 +116,8 @@ class BasicDataset(torch.utils.data.Dataset):
             bboxes = np.float32(bboxes)
         else:
             bboxes = np.zeros([0, 6], dtype=np.float32)
-        
+        img = img.transpose(2, 0, 1)
+        img = np.ascontiguousarray(img)
         return torch.ByteTensor(img), torch.FloatTensor(bboxes)
 
     def __len__(self):
@@ -157,7 +157,7 @@ class YOLODataset(BasicDataset):
                  img_size=224,
                  augments=TRAIN_AUGS,
                  multi_scale=False,
-                 rect=True):
+                 rect=False):
         super(YOLODataset, self).__init__(img_size=img_size,
                                           augments=augments,
                                           multi_scale=multi_scale,
@@ -223,7 +223,7 @@ class CocoDataset(BasicDataset):
                  img_size=224,
                  augments=TRAIN_AUGS,
                  multi_scale=False,
-                 rect=True):
+                 rect=False):
         super(CocoDataset, self).__init__(img_size=img_size,
                                           augments=augments,
                                           multi_scale=multi_scale,
