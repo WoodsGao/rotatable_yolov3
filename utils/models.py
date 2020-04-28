@@ -5,8 +5,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from pytorch_modules.backbones import resnet50
-from pytorch_modules.nn import FPN, ConvNormAct
+from pytorch_modules.backbones import resnet50, resnet34
+from pytorch_modules.nn import FPN, ConvNormAct, SPP
 from pytorch_modules.utils import initialize_weights
 
 
@@ -75,11 +75,12 @@ class YOLOV3(nn.Module):
                      [[10, 13], [16, 30], [33, 23]],
                  ]):
         super(YOLOV3, self).__init__()
-        self.stages = resnet50(pretrained=True).stages
+        self.stages = resnet34(pretrained=True).stages
 
-        depth = 3
-        width = 256
-        planes_list = [512, 1024, 2048]
+        depth = 2
+        width = 512
+        planes_list = [128, 256, 512 * 4]
+        self.spp = SPP()
         self.fpn = FPN(planes_list, width, 3)
         self.head = nn.ModuleList([])
         self.yolo_layers = nn.ModuleList([])
@@ -112,6 +113,7 @@ class YOLOV3(nn.Module):
         x = self.stages[3](x)
         features.append(x)
         x = self.stages[4](x)
+        x = self.spp(x)
         features.append(x)
         features = self.fpn(features)
         features.reverse()

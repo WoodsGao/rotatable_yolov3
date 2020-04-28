@@ -1,15 +1,13 @@
 import random
 from pathlib import Path
-import torch.distributed as dist
+
 import cv2
-#import matplotlib
-#import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import torch.distributed as dist
 import torch.nn as nn
-from tqdm import tqdm
 
-#matplotlib.rc('font', **{'size': 11})
+from pytorch_modules.nn import FocalBCELoss
 
 
 def load_classes(path):
@@ -18,37 +16,6 @@ def load_classes(path):
         names = f.read().split('\n')
     return list(filter(
         None, names))  # filter removes empty strings (such as last line)
-
-
-def labels_to_class_weights(labels, nc=80):
-    # Get class weights (inverse frequency) from training labels
-    ni = len(labels)  # number of images
-    labels = np.concatenate(labels, 0)  # labels.shape = (866643, 5) for COCO
-    classes = labels[:, 0].astype(np.int)  # labels = [class xywh]
-    weights = np.bincount(classes, minlength=nc)  # occurences per class
-
-    # Prepend gridpoint count (for uCE trianing)
-    gpi = ((320 / 32 * np.array([1, 2, 4]))**2 *
-           3).sum()  # gridpoints per image
-    weights = np.hstack([gpi * ni - weights.sum() * 9,
-                         weights * 9])**0.5  # prepend gridpoints to start
-
-    weights[weights == 0] = 1  # replace empty bins with 1
-    weights = 1 / weights  # number of targets per class
-    weights /= weights.sum()  # normalize
-    return torch.from_numpy(weights)
-
-
-def labels_to_image_weights(labels, nc=80, class_weights=np.ones(80)):
-    # Produces image weights based on class mAPs
-    n = len(labels)
-    class_counts = np.array([
-        np.bincount(labels[i][:, 0].astype(np.int), minlength=nc)
-        for i in range(n)
-    ])
-    image_weights = (class_weights.reshape(1, nc) * class_counts).sum(1)
-    # index = random.choices(range(n), weights=image_weights, k=1)  # weight image sample
-    return image_weights
 
 
 def xyxy2xywh(x):
@@ -241,10 +208,7 @@ def compute_loss(p, targets, model):  # predictions, targets, model
     lcls, lbox, lobj = ft([0]), ft([0]), ft([0])
     tcls, tbox, indices, anchor_vec = build_targets(model, targets)
     # Define criteria
-    BCEcls = nn.BCEWithLogitsLoss()
-    BCEobj = nn.BCEWithLogitsLoss()
-    BCE = nn.BCEWithLogitsLoss()
-    CE = nn.CrossEntropyLoss()  # weight=model.class_weights
+    BCE = FocalBCELoss()
     # Compute losses
     for i, pi in enumerate(p):  # layer index, layer predictions
         b, a, gj, gi = indices[i]  # image, anchor, gridy, gridx
@@ -258,30 +222,18 @@ def compute_loss(p, targets, model):  # predictions, targets, model
             # ps[:, 2:4] = torch.sigmoid(ps[:, 2:4])  # wh power loss (uncomment)
 
             # GIoU
-            pxy = torch.sigmoid(
-                ps[:, 0:2]
-            )  # pxy = pxy * s - (s - 1) / 2,  s = 1.5  (scale_xy)
+            pxy = torch.sigmoid(ps[:, 0:2])
             pbox = torch.cat((pxy, torch.exp(ps[:, 2:4]) * anchor_vec[i]),
                              1)  # predicted box
             giou = bbox_iou(pbox.t(), tbox[i], x1y1x2y2=False,
                             GIoU=True)  # giou computation
             lbox += (1.0 - giou).mean()  # giou loss
 
-            # if model.nc > 1:  # cls loss (only if multiple classes)
             t = torch.zeros_like(ps[:, 5:])  # targets
             t[range(nb), tcls[i]] = 1.0
-            lcls += BCE(ps[:, 5:], t).mean()  # BCE
-            #ce = CE(ps[:, 5:], tcls[i])  # CE
-            #lcls += ce
-            # Instance-class weighting (use with reduction='none')
-            # nt = t.sum(0) + 1  # number of targets per class
-            # lcls += (BCEcls(ps[:, 5:], t) / nt).mean() * nt.mean()  # v1
-            # lcls += (BCEcls(ps[:, 5:], t) / nt[tcls[i]].view(-1,1)).mean() * nt.mean()  # v2
+            lcls += BCE(ps[:, 5:].sigmoid(), t).mean()  # BCE
 
-            # Append targets to text file
-            # with open('targets.txt', 'a') as file:
-            #     [file.write('%11.5g ' * 4 % tuple(x) + '\n') for x in torch.cat((txy[i], twh[i]), 1)]
-        bce = BCE(pi[..., 4], tobj)
+        bce = BCE(pi[..., 4].sigmoid(), tobj)
         lobj += bce  # obj loss
 
     lbox *= 3.31
@@ -542,30 +494,3 @@ def plot_one_box(bbox, img, color=None, label=None, line_thickness=None):
                     tl / 3, [225, 255, 255],
                     thickness=tf,
                     lineType=cv2.LINE_AA)
-
-
-def plot_images(imgs, targets, paths=None, fname='images.jpg'):
-    # Plots training images overlaid with targets
-    imgs = imgs.cpu().numpy()
-    targets = targets.cpu().numpy()
-    # targets = targets[targets[:, 1] == 21]  # plot only one class
-
-    fig = plt.figure(figsize=(10, 10))
-    bs, _, h, w = imgs.shape  # batch size, _, height, width
-    bs = min(bs, 16)  # limit plot to 16 images
-    ns = np.ceil(bs**0.5)  # number of subplots
-
-    for i in range(bs):
-        boxes = xywh2xyxy(targets[targets[:, 0] == i, 2:6]).T
-        boxes[[0, 2]] *= w
-        boxes[[1, 3]] *= h
-        plt.subplot(ns, ns, i + 1).imshow(imgs[i].transpose(1, 2, 0))
-        plt.plot(boxes[[0, 2, 2, 0, 0]], boxes[[1, 1, 3, 3, 1]], '.-')
-        plt.axis('off')
-        if paths is not None:
-            s = Path(paths[i]).name
-            plt.title(s[:min(len(s), 40)],
-                      fontdict={'size': 8})  # limit to 40 characters
-    fig.tight_layout()
-    fig.savefig(fname, dpi=200)
-    plt.close()
