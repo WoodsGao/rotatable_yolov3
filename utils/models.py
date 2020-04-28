@@ -118,6 +118,8 @@ class YOLOV3(nn.Module):
         features = [
             head(feature) for feature, head in zip(features, self.head)
         ]
+        if os.environ.get('CAFFE_EXPORT'):
+            return None
         output = [
             yolo(feature, img_size)
             for feature, yolo in zip(features, self.yolo_layers)

@@ -1,16 +1,20 @@
 import argparse
 import os
 import os.path as osp
+
 import torch
-from utils.models import YOLOV3
-from pytorch_modules.utils import fuse
+import torch.nn as nn
+
 from pytorch2caffe import pytorch2caffe
+from pytorch_modules.utils import fuse
+from utils.models import YOLOV3
 
 
 def export2caffe(weights, num_classes, img_size):
+    os.environ['CAFFE_EXPORT'] = '1'
     model = YOLOV3(num_classes)
-    weights = torch.load(weights, map_location='cpu')
-    model.load_state_dict(weights['model'])
+    # weights = torch.load(weights, map_location='cpu')
+    # model.load_state_dict(weights['model'])
     model.eval()
     fuse(model)
     name = 'YOLOV3'
@@ -22,7 +26,7 @@ def export2caffe(weights, num_classes, img_size):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('weights', type=str)
+    parser.add_argument('--weights', type=str)
     parser.add_argument('--num-classes', type=int, default=21)
     parser.add_argument('--img-size', type=str, default='512')
     opt = parser.parse_args()
