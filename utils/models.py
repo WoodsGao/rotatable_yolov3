@@ -1,10 +1,12 @@
 import os
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
-from pytorch_modules.nn import ConvNormAct, FPN
+
 from pytorch_modules.backbones import resnet50
+from pytorch_modules.nn import FPN, ConvNormAct
 from pytorch_modules.utils import initialize_weights
 
 
@@ -122,12 +124,6 @@ class YOLOV3(nn.Module):
         ]
         if self.training:
             return tuple(output)
-        # elif ONNX_EXPORT:
-        #     output = torch.cat(
-        #         output, 1)  # cat 3 layers 85 x (507, 2028, 8112) to 85 x 10647
-        #     nc = self.module_list[
-        #         self.yolo_layers_layers[0]].nc  # number of classes
-        #     return output[5:5 + nc].t(), output[:4].t()  # ONNX scores, boxes
         else:
             io, p = list(zip(*output))  # inference output, training output
             return torch.cat(io, 1), p

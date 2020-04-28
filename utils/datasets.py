@@ -78,13 +78,14 @@ class BasicDataset(torch.utils.data.Dataset):
         h, w, c = img.shape
 
         if self.rect:
-            resize = ia.Resize(self.img_size)
-        else:
             scale = min(self.img_size[0] / w, self.img_size[1] / h)
             resize = ia.Sequential([
                 ia.Resize((int(w * scale), int(h * scale))),
                 ia.PadToFixedSize(*self.img_size)
             ])
+        else:
+            resize = ia.Resize(self.img_size)
+
         img = resize.augment_image(img)
         polygons = resize.augment_polygons(polygons)
         # augment
