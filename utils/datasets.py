@@ -60,7 +60,7 @@ TRAIN_AUGS = ia.SomeOf(
 
 
 class BasicDataset(torch.utils.data.Dataset):
-    def __init__(self, img_size, augments, multi_scale, rect):
+    def __init__(self, img_size, augments, multi_scale, rect, with_label):
         super(BasicDataset, self).__init__()
         if isinstance(img_size, int):
             img_size = (img_size, img_size)
@@ -69,6 +69,7 @@ class BasicDataset(torch.utils.data.Dataset):
         self.rect = rect
         self.multi_scale = multi_scale
         self.augments = augments
+        self.with_label = with_label
         self.data = []
 
     def get_data(self, idx):
@@ -157,11 +158,13 @@ class YOLODataset(BasicDataset):
                  img_size=224,
                  augments=TRAIN_AUGS,
                  multi_scale=False,
-                 rect=False):
+                 rect=False,
+                 with_label=False):
         super(YOLODataset, self).__init__(img_size=img_size,
                                           augments=augments,
                                           multi_scale=multi_scale,
-                                          rect=rect)
+                                          rect=rect,
+                                          with_label=with_label)
         self.path = path
         self.classes = []
         self.build_data()
@@ -204,9 +207,12 @@ class YOLODataset(BasicDataset):
                         continue
                     bboxes.append([c, xmin, ymin, xmax, ymax])
             self.data.append([osp.join(image_dir, name), bboxes])
+            if self.with_label:
+                self.data = [d for d in self.data if len(d[1]) > 0]
 
     def get_data(self, idx):
         img = cv2.imread(self.data[idx][0])
+        img = cv2.medianBlur(img, 15)
         polygons = []
         for c, xmin, ymin, xmax, ymax in self.data[idx][1]:
             polygons.append(
@@ -223,11 +229,13 @@ class CocoDataset(BasicDataset):
                  img_size=224,
                  augments=TRAIN_AUGS,
                  multi_scale=False,
-                 rect=False):
+                 rect=False,
+                 with_label=False):
         super(CocoDataset, self).__init__(img_size=img_size,
                                           augments=augments,
                                           multi_scale=multi_scale,
-                                          rect=rect)
+                                          rect=rect,
+                                          with_label=with_label)
         with open(path, 'r') as f:
             self.coco = json.loads(f.read())
         self.img_root = osp.dirname(path)
@@ -250,6 +258,8 @@ class CocoDataset(BasicDataset):
             idx = img_ids.index(idx)
             img_anns[idx].append(ann)
         self.data = list(zip(img_paths, img_anns))
+        if self.with_label:
+            self.data = [d for d in self.data if len(d[1]) > 0]
 
     def get_data(self, idx):
         img = cv2.imread(self.data[idx][0])
@@ -258,7 +268,7 @@ class CocoDataset(BasicDataset):
         for ann in anns:
             polygons.append(
                 Polygon(
-                    np.float32(
-                        ann['segmentation']).reshape(-1, 2), ann['category_id']))
+                    np.float32(ann['segmentation']).reshape(-1, 2),
+                    ann['category_id']))
         polygons = PolygonsOnImage(polygons, img.shape)
         return img, polygons

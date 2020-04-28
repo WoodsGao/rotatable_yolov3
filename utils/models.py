@@ -77,21 +77,20 @@ class YOLOV3(nn.Module):
         super(YOLOV3, self).__init__()
         self.stages = resnet34(pretrained=True).stages
 
-        depth = 2
+        depth = 4
         width = 512
-        planes_list = [128, 256, 512 * 4]
+        planes_list = [512 * 4, 256, 128]
         self.spp = SPP()
-        self.fpn = FPN(planes_list, width, 3)
+        self.fpn = FPN(planes_list, width, depth)
         self.head = nn.ModuleList([])
         self.yolo_layers = nn.ModuleList([])
         for i in range(3):
-            head = []
-            for j in range(depth - 1):
-                head.append(ConvNormAct(width, width))
-            head.append(
-                nn.Conv2d(width,
-                          len(anchors[i]) * (5 + num_classes), 1))
-            self.head.append(nn.Sequential(*head))
+            self.head.append(
+                nn.Sequential(
+                    ConvNormAct(width, width),
+                    nn.Conv2d(width,
+                              len(anchors[i]) * (5 + num_classes), 1),
+                ))
             self.yolo_layers.append(
                 YOLOLayer(
                     anchors=np.float32(anchors[i]),
@@ -105,18 +104,17 @@ class YOLOV3(nn.Module):
     def forward(self, x):
         img_size = x.shape[-2:]
 
-        features = []
         x = self.stages[0](x)
         x = self.stages[1](x)
         x = self.stages[2](x)
-        features.append(x)
+        x1 = x
         x = self.stages[3](x)
-        features.append(x)
+        x2 = x
         x = self.stages[4](x)
         x = self.spp(x)
-        features.append(x)
+        x3 = x
+        features = [x3, x2, x1]
         features = self.fpn(features)
-        features.reverse()
         features = [
             head(feature) for feature, head in zip(features, self.head)
         ]
