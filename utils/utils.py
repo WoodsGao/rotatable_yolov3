@@ -346,7 +346,7 @@ def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.5):
 
     min_wh = 2  # (pixels) minimum box width and height
 
-    output = [None] * len(prediction)
+    output = [torch.zeros((0, 7)).to(prediction[0].device)] * len(prediction)
     for image_i, pred in enumerate(prediction):
         # Experiment: Prior class size rejection
         # x, y, w, h = pred[:, 0], pred[:, 1], pred[:, 2], pred[:, 3]
@@ -457,7 +457,6 @@ def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.5):
         if len(det_max):
             det_max = torch.cat(det_max)  # concatenate
             output[image_i] = det_max[(-det_max[:, 4]).argsort()]  # sort
-
     return output
 
 
@@ -501,12 +500,36 @@ def apply_classifier(x, model, img, im0):
 
 
 # Plotting functions ---------------------------------------------------------------------------------------------------
-def plot_one_box(x, img, color=None, label=None, line_thickness=None):
+def show_batch(inputs, targets):
+    imgs = inputs.clone()[:8]
+    bboxes = targets[:8]
+    imgs *= torch.FloatTensor([58.395, 57.12,
+                               57.375]).reshape(1, 3, 1, 1).to(imgs.device)
+    imgs += torch.FloatTensor([123.675, 116.28,
+                               103.53]).reshape(1, 3, 1, 1).to(imgs.device)
+
+    imgs = imgs.clamp(0, 255).permute(0, 2, 3,
+                                      1).byte().cpu().numpy()[..., ::-1]
+    imgs = np.ascontiguousarray(imgs)
+    for i in range(len(bboxes)):
+        bbox = bboxes[i]
+        img = imgs[i]
+        for *xyxy, obj_conf, cls_conf, c in bbox:
+            label = '%d %lf' % (c, obj_conf * cls_conf)
+            plot_one_box(xyxy, img, label=label)
+        imgs[i] = img
+    imgs = imgs.reshape(-1, imgs.shape[2], imgs.shape[3])
+
+    save_img = imgs
+    cv2.imwrite('batch.png', save_img)
+
+
+def plot_one_box(bbox, img, color=None, label=None, line_thickness=None):
     # Plots one bounding box on image img
     tl = line_thickness or round(
         0.002 * (img.shape[0] + img.shape[1]) / 2) + 1  # line thickness
     color = color or [random.randint(0, 255) for _ in range(3)]
-    c1, c2 = (int(x[0]), int(x[1])), (int(x[2]), int(x[3]))
+    c1, c2 = (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3]))
     cv2.rectangle(img, c1, c2, color, thickness=tl)
     if label:
         tf = max(tl - 1, 1)  # font thickness

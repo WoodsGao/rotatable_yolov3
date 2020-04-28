@@ -9,7 +9,7 @@ from utils.datasets import CocoDataset
 from torch.utils.data import DataLoader
 from pytorch_modules.utils import device, Fetcher
 from pytorch_modules.utils import device
-from utils.utils import compute_loss, non_max_suppression, clip_coords, xywh2xyxy, bbox_iou, ap_per_class
+from utils.utils import compute_loss, non_max_suppression, clip_coords, xywh2xyxy, bbox_iou, ap_per_class, show_batch
 
 
 @torch.no_grad()
@@ -24,12 +24,8 @@ def test(model, fetcher, conf_thres=1e-3, nms_thres=0.5):
     p, r, f1, mp, mr, map, mf1 = 0., 0., 0., 0., 0., 0., 0.
     jdict, stats, ap, ap_class = [], [], [], []
     pbar = tqdm(enumerate(fetcher), total=len(fetcher))
-    for batch_idx, (imgs, targets) in pbar:
+    for idx, (imgs, targets) in pbar:
         _, _, height, width = imgs.shape  # batch size, channels, height, width
-
-        # Plot images with bounding boxes
-        # if batch_idx == 0 and not osp.exists('test_batch0.jpg'):
-        #     plot_images(imgs=imgs, targets=targets, paths=paths, fname='test_batch0.jpg')
 
         # Run model
         inf_out, train_out = model(imgs)  # inference and training outputs
@@ -42,6 +38,10 @@ def test(model, fetcher, conf_thres=1e-3, nms_thres=0.5):
         output = non_max_suppression(inf_out,
                                      conf_thres=conf_thres,
                                      nms_thres=nms_thres)
+        # Plot images with bounding boxes
+        if idx == 0:
+            show_batch(imgs, output)
+
 
         # Statistics per image
         for si, pred in enumerate(output):
@@ -96,7 +96,7 @@ def test(model, fetcher, conf_thres=1e-3, nms_thres=0.5):
 
             # Append statistics (correct, conf, pcls, tcls)
             stats.append((correct, pred[:, 4].cpu(), pred[:, 6].cpu(), tcls))
-        pbar.set_description('loss: %8g' % (val_loss / (batch_idx + 1)))
+        pbar.set_description('loss: %8g' % (val_loss / (idx + 1)))
 
     # Compute statistics
     stats = [np.concatenate(x, 0) for x in list(zip(*stats))]

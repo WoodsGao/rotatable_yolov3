@@ -122,7 +122,8 @@ if __name__ == "__main__":
                                              world_size=int(
                                                  os.environ['WORLD_SIZE']),
                                              rank=int(os.environ['RANK']))
-    torch.cuda.set_device(opt.local_rank)
+    if torch.cuda.is_available():
+        torch.cuda.set_device(opt.local_rank)
     if 'LOCAL_RANK' not in os.environ:
         os.environ['LOCAL_RANK'] = str(opt.local_rank)
     if opt.local_rank > 0:
