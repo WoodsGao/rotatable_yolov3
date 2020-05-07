@@ -6,7 +6,7 @@ import torch
 import cv2
 import shutil
 from tqdm import tqdm
-from utils.models import YOLOV3  # set ONNX_EXPORT in models.py
+from models import YOLOV3  # set ONNX_EXPORT in models.py
 from utils.utils import plot_one_box
 from utils.inference import inference
 from pytorch_modules.utils import device, IMG_EXT

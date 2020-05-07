@@ -87,7 +87,7 @@ def train(data_dir,
             metrics = test(trainer.model, val_fetcher, conf_thres=0.1)
             if metrics > trainer.metrics:
                 best = True
-                print('save best, metrics: %g' % metrics)
+                print('save best, mAP: %g' % metrics)
                 trainer.metrics = metrics
         if not nosave:
             trainer.save(best)
