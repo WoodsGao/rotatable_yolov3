@@ -8,9 +8,9 @@ import torch
 import torch.distributed as dist
 from torch.utils.data import DataLoader, DistributedSampler
 
+from models import YOLOV3
 from pytorch_modules.utils import Fetcher, Trainer
 from utils.datasets import CocoDataset
-from utils.models import YOLOV3
 from utils.utils import compute_loss
 
 
@@ -29,14 +29,14 @@ def train(data_dir,
           mixed_precision=False,
           notest=False,
           nosave=False):
-    os.makedirs('weights', exist_ok=True)
     train_coco = osp.join(data_dir, 'train.json')
     val_coco = osp.join(data_dir, 'val.json')
 
     train_data = CocoDataset(train_coco,
                              img_size=img_size,
                              multi_scale=multi_scale,
-                             rect=rect)
+                             rect=rect,
+                             mosaic=True)
     train_loader = DataLoader(
         train_data,
         batch_size=batch_size,
@@ -51,15 +51,15 @@ def train(data_dir,
     train_fetcher = Fetcher(train_loader, train_data.post_fetch_fn)
     if not notest:
         val_data = CocoDataset(val_coco,
-                               img_size=img_size,
-                               augments=None,
-                               rect=rect)
+                                img_size=img_size,
+                                augments=None,
+                                rect=rect)
         val_loader = DataLoader(
             val_data,
             batch_size=batch_size,
             shuffle=not (dist.is_initialized()),
             sampler=DistributedSampler(val_data, dist.get_world_size(),
-                                       dist.get_rank())
+                                        dist.get_rank())
             if dist.is_initialized() else None,
             pin_memory=True,
             num_workers=num_workers,
@@ -72,6 +72,7 @@ def train(data_dir,
     trainer = Trainer(model,
                       train_fetcher,
                       loss_fn=compute_loss,
+                      workdir='weights',
                       accumulate=accumulate,
                       adam=adam,
                       lr=lr,
@@ -80,19 +81,14 @@ def train(data_dir,
                       mixed_precision=mixed_precision)
     while trainer.epoch < epochs:
         trainer.step()
-        save_path_list = ['last.pt']
-        if trainer.epoch % 10 == 0:
-            save_path_list.append('bak%d.pt' % trainer.epoch)
         if not notest:
+            best = False
             metrics = test(trainer.model, val_fetcher, conf_thres=0.1)
             if metrics > trainer.metrics:
+                best = True
                 trainer.metrics = metrics
-                save_path_list.append('best.pt')
-                print('save best, metrics: %g...' % metrics)
-        save_path_list = [osp.join('weights', p) for p in save_path_list]
-        if nosave:
-            continue
-        trainer.save(save_path_list)
+        if not nosave:
+            trainer.save(best)
 
 
 if __name__ == "__main__":

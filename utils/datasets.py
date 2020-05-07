@@ -15,52 +15,53 @@ from pytorch_modules.utils import IMG_EXT
 TRAIN_AUGS = ia.SomeOf(
     [0, 3],
     [
-        ia.WithColorspace(
-            to_colorspace='HSV',
-            from_colorspace='RGB',
-            children=ia.Sequential([
-                ia.WithChannels(
-                    0,
-                    ia.SomeOf([0, None],
-                              [ia.Add((-10, 10)),
-                               ia.Multiply((0.95, 1.05))],
-                              random_state=True)),
-                ia.WithChannels(
-                    1,
-                    ia.SomeOf([0, None],
-                              [ia.Add((-50, 50)),
-                               ia.Multiply((0.8, 1.2))],
-                              random_state=True)),
-                ia.WithChannels(
-                    2,
-                    ia.SomeOf([0, None],
-                              [ia.Add((-50, 50)),
-                               ia.Multiply((0.8, 1.2))],
-                              random_state=True)),
-            ])),
+        # ia.WithColorspace(
+        #     to_colorspace='HSV',
+        #     from_colorspace='RGB',
+        #     children=ia.Sequential([
+        #         ia.WithChannels(
+        #             0,
+        #             ia.SomeOf([0, None],
+        #                       [ia.Add((-10, 10)),
+        #                        ia.Multiply((0.95, 1.05))],
+        #                       random_state=True)),
+        #         ia.WithChannels(
+        #             1,
+        #             ia.SomeOf([0, None],
+        #                       [ia.Add((-50, 50)),
+        #                        ia.Multiply((0.8, 1.2))],
+        #                       random_state=True)),
+        #         ia.WithChannels(
+        #             2,
+        #             ia.SomeOf([0, None],
+        #                       [ia.Add((-50, 50)),
+        #                        ia.Multiply((0.8, 1.2))],
+        #                       random_state=True)),
+        #     ])),
         ia.Dropout([0.015, 0.1]),  # drop 5% or 20% of all pixels
         ia.Sharpen((0.0, 1.0)),  # sharpen the image
         ia.Affine(
             scale=(0.8, 1.2),
             translate_percent=(-0.1, 0.1),
-            rotate=(-15, 15),
+            rotate=(-90, 90),
             shear=(-0.1,
                    0.1)),  # rotate by -45 to 45 degrees (affects heatmaps)
-        ia.ElasticTransformation(
-            alpha=(0, 10),
-            sigma=(0, 10)),  # apply water effect (affects heatmaps)
-        ia.PiecewiseAffine(scale=(0, 0.03), nb_rows=(2, 6), nb_cols=(2, 6)),
+        # ia.ElasticTransformation(
+        #     alpha=(0, 10),
+        #     sigma=(0, 10)),  # apply water effect (affects heatmaps)
+        # ia.PiecewiseAffine(scale=(0, 0.03), nb_rows=(2, 6), nb_cols=(2, 6)),
         ia.GaussianBlur((0, 3)),
         ia.Fliplr(0.1),
         ia.Flipud(0.1),
-        ia.LinearContrast((0.5, 1)),
+        # ia.LinearContrast((0.5, 1)),
         ia.AdditiveGaussianNoise(loc=(0, 10), scale=(0, 10))
     ],
     random_state=True)
 
 
 class BasicDataset(torch.utils.data.Dataset):
-    def __init__(self, img_size, augments, multi_scale, rect, with_label):
+    def __init__(self, img_size, augments, multi_scale, rect, with_label,
+                 mosaic):
         super(BasicDataset, self).__init__()
         if isinstance(img_size, int):
             img_size = (img_size, img_size)
@@ -70,12 +71,24 @@ class BasicDataset(torch.utils.data.Dataset):
         self.multi_scale = multi_scale
         self.augments = augments
         self.with_label = with_label
+        self.mosaic = mosaic
         self.data = []
 
     def get_data(self, idx):
         return None, None
 
     def __getitem__(self, idx):
+        img, bboxes = self.get_item(idx)
+        img = img.transpose(2, 0, 1)
+        img = np.ascontiguousarray(img)
+        img, bboxes = torch.ByteTensor(img), torch.FloatTensor(bboxes)
+        bboxes[:, 4] -= bboxes[:, 2]
+        bboxes[:, 5] -= bboxes[:, 3]
+        bboxes[:, 2] -= bboxes[:, 4] / 2.
+        bboxes[:, 3] -= bboxes[:, 5] / 2.
+        return img, bboxes
+
+    def get_item(self, idx, mosaic=True):
         img, polygons = self.get_data(idx)
         img = img[..., ::-1]
         h, w, c = img.shape
@@ -103,23 +116,64 @@ class BasicDataset(torch.utils.data.Dataset):
             p[0] /= img.shape[1]
             p[1] /= img.shape[0]
             p = p.clip(0, 1)
+            # # for line/point only
+            # x1 = max(p[0].min() - 0.03, 0)
+            # x2 = min(p[0].max() + 0.03, 1)
+            # y1 = max(p[1].min() - 0.03, 0)
+            # y2 = min(p[1].max() + 0.03, 1)
             x1 = p[0].min()
             x2 = p[0].max()
             y1 = p[1].min()
             y2 = p[1].max()
             c = polygon.label
-            x = (x1 + x2) / 2
-            y = (y1 + y2) / 2
-            w = x2 - x1
-            h = y2 - y1
-            bboxes.append([0, c, x, y, w, h])
+            bboxes.append([0, c, x1, y1, x2, y2])
         if len(bboxes):
             bboxes = np.float32(bboxes)
         else:
             bboxes = np.zeros([0, 6], dtype=np.float32)
-        img = img.transpose(2, 0, 1)
-        img = np.ascontiguousarray(img)
-        return torch.ByteTensor(img), torch.FloatTensor(bboxes)
+        if self.mosaic and mosaic:
+            mosaic_list = [(img, bboxes)]
+            for _ in range(3):
+                next_idx = random.randint(0, self.__len__() - 1)
+                mosaic_list.append(self.get_item(next_idx, False))
+            cut_x_ratio = random.uniform(0.2, 0.8)
+            cut_y_ratio = random.uniform(0.2, 0.8)
+            cut_x = int(cut_x_ratio * self.img_size[0])
+            cut_y = int(cut_y_ratio * self.img_size[1])
+            random.shuffle(mosaic_list)
+            img0 = mosaic_list[0][0][:cut_y, :cut_x]
+            img1 = mosaic_list[1][0][:cut_y, cut_x:]
+            img0 = np.concatenate([img0, img1], 1)
+            img2 = mosaic_list[2][0][cut_y:, :cut_x]
+            img3 = mosaic_list[3][0][cut_y:, cut_x:]
+            img2 = np.concatenate([img2, img3], 1)
+            img = np.concatenate([img0, img2], 0)
+            bboxes0 = mosaic_list[0][1]
+            bboxes0[:, 2] = bboxes0[:, 2].clip(0, cut_x_ratio)
+            bboxes0[:, 4] = bboxes0[:, 4].clip(0, cut_x_ratio)
+            bboxes0[:, 3] = bboxes0[:, 3].clip(0, cut_y_ratio)
+            bboxes0[:, 5] = bboxes0[:, 5].clip(0, cut_y_ratio)
+            bboxes1 = mosaic_list[1][1]
+            bboxes1[:, 2] = bboxes1[:, 2].clip(cut_x_ratio, 1)
+            bboxes1[:, 4] = bboxes1[:, 4].clip(cut_x_ratio, 1)
+            bboxes1[:, 3] = bboxes1[:, 3].clip(0, cut_y_ratio)
+            bboxes1[:, 5] = bboxes1[:, 5].clip(0, cut_y_ratio)
+            bboxes2 = mosaic_list[2][1]
+            bboxes2[:, 2] = bboxes2[:, 2].clip(0, cut_x_ratio)
+            bboxes2[:, 4] = bboxes2[:, 4].clip(0, cut_x_ratio)
+            bboxes2[:, 3] = bboxes2[:, 3].clip(cut_y_ratio, 1)
+            bboxes2[:, 5] = bboxes2[:, 5].clip(cut_y_ratio, 1)
+            bboxes3 = mosaic_list[3][1]
+            bboxes3[:, 2] = bboxes3[:, 2].clip(cut_x_ratio, 1)
+            bboxes3[:, 4] = bboxes3[:, 4].clip(cut_x_ratio, 1)
+            bboxes3[:, 3] = bboxes3[:, 3].clip(cut_y_ratio, 1)
+            bboxes3[:, 5] = bboxes3[:, 5].clip(cut_y_ratio, 1)
+            bboxes = np.concatenate([bboxes0, bboxes1, bboxes2, bboxes3], 0)
+        # filter small items
+        bboxes = bboxes[bboxes[:, 4] - bboxes[:, 2] > 3e-3]
+        bboxes = bboxes[bboxes[:, 5] - bboxes[:, 3] > 3e-3]
+        
+        return img, bboxes
 
     def __len__(self):
         return len(self.data)
@@ -159,12 +213,14 @@ class YOLODataset(BasicDataset):
                  augments=TRAIN_AUGS,
                  multi_scale=False,
                  rect=False,
-                 with_label=False):
+                 with_label=True,
+                 mosaic=False):
         super(YOLODataset, self).__init__(img_size=img_size,
                                           augments=augments,
                                           multi_scale=multi_scale,
                                           rect=rect,
-                                          with_label=with_label)
+                                          with_label=with_label,
+                                          mosaic=mosaic)
         self.path = path
         self.classes = []
         self.build_data()
@@ -212,7 +268,6 @@ class YOLODataset(BasicDataset):
 
     def get_data(self, idx):
         img = cv2.imread(self.data[idx][0])
-        img = cv2.medianBlur(img, 15)
         polygons = []
         for c, xmin, ymin, xmax, ymax in self.data[idx][1]:
             polygons.append(
@@ -230,12 +285,14 @@ class CocoDataset(BasicDataset):
                  augments=TRAIN_AUGS,
                  multi_scale=False,
                  rect=False,
-                 with_label=False):
+                 with_label=True,
+                 mosaic=False):
         super(CocoDataset, self).__init__(img_size=img_size,
                                           augments=augments,
                                           multi_scale=multi_scale,
                                           rect=rect,
-                                          with_label=with_label)
+                                          with_label=with_label,
+                                          mosaic=mosaic)
         with open(path, 'r') as f:
             self.coco = json.loads(f.read())
         self.img_root = osp.dirname(path)

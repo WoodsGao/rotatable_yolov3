@@ -208,6 +208,7 @@ def compute_loss(p, targets, model):  # predictions, targets, model
     lcls, lbox, lobj = ft([0]), ft([0]), ft([0])
     tcls, tbox, indices, anchor_vec = build_targets(model, targets)
     # Define criteria
+    BCE = nn.BCELoss()
     BCE = FocalBCELoss()
     # Compute losses
     for i, pi in enumerate(p):  # layer index, layer predictions
@@ -236,9 +237,9 @@ def compute_loss(p, targets, model):  # predictions, targets, model
         bce = BCE(pi[..., 4].sigmoid(), tobj)
         lobj += bce  # obj loss
 
-    lbox *= 3.31
-    lobj *= 42.4
-    lcls *= 40.
+    lbox *= 3.54
+    lobj *= 64.3
+    lcls *= 37.4
     loss = lbox + lobj + lcls
     return loss
 
@@ -465,7 +466,9 @@ def show_batch(inputs, targets):
     imgs = np.ascontiguousarray(imgs)
     for i in range(len(bboxes)):
         bbox = bboxes[i]
+        bbox = bbox[bbox[..., 4] > 0.3]
         img = imgs[i]
+        clip_coords(bbox, img.shape)
         for *xyxy, obj_conf, cls_conf, c in bbox:
             label = '%d %lf' % (c, obj_conf * cls_conf)
             plot_one_box(xyxy, img, label=label)

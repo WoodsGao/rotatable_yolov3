@@ -5,9 +5,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from pytorch_modules.backbones import resnet50, resnet34
-from pytorch_modules.nn import FPN, ConvNormAct, SPP
+from pytorch_modules.backbones import resnet34, resnet50
+from pytorch_modules.nn import ConvNormAct
 from pytorch_modules.utils import initialize_weights
+
+from .fpn import FPN
+from .spp import SPP
 
 
 class YOLOLayer(nn.Module):

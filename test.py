@@ -4,7 +4,7 @@ import torch
 import torch.distributed as dist
 import numpy as np
 from tqdm import tqdm
-from utils.models import YOLOV3
+from models import YOLOV3
 from utils.datasets import CocoDataset
 from torch.utils.data import DataLoader
 from pytorch_modules.utils import device, Fetcher
