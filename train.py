@@ -36,6 +36,7 @@ def train(data_dir,
                              img_size=img_size,
                              multi_scale=multi_scale,
                              rect=rect,
+                             with_label=True,
                              mosaic=True)
     train_loader = DataLoader(
         train_data,
@@ -51,15 +52,15 @@ def train(data_dir,
     train_fetcher = Fetcher(train_loader, train_data.post_fetch_fn)
     if not notest:
         val_data = CocoDataset(val_coco,
-                                img_size=img_size,
-                                augments=None,
-                                rect=rect)
+                               img_size=img_size,
+                               augments=None,
+                               rect=rect)
         val_loader = DataLoader(
             val_data,
             batch_size=batch_size,
             shuffle=not (dist.is_initialized()),
             sampler=DistributedSampler(val_data, dist.get_world_size(),
-                                        dist.get_rank())
+                                       dist.get_rank())
             if dist.is_initialized() else None,
             pin_memory=True,
             num_workers=num_workers,
@@ -86,6 +87,7 @@ def train(data_dir,
             metrics = test(trainer.model, val_fetcher, conf_thres=0.1)
             if metrics > trainer.metrics:
                 best = True
+                print('save best, metrics: %g' % metrics)
                 trainer.metrics = metrics
         if not nosave:
             trainer.save(best)
@@ -105,7 +107,10 @@ if __name__ == "__main__":
     parser.add_argument('--num-workers', type=int, default=4)
     parser.add_argument('--multi-scale', action='store_true')
     parser.add_argument('--rect', action='store_true')
-    parser.add_argument('-mp', '--mix_precision', action='store_true', help='mixed precision')
+    parser.add_argument('-mp',
+                        '--mix_precision',
+                        action='store_true',
+                        help='mixed precision')
     parser.add_argument('--notest', action='store_true')
     parser.add_argument('--nosave', action='store_true')
     parser.add_argument('--backend', type=str, default='nccl')

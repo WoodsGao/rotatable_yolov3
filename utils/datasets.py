@@ -84,8 +84,8 @@ class BasicDataset(torch.utils.data.Dataset):
         img, bboxes = torch.ByteTensor(img), torch.FloatTensor(bboxes)
         bboxes[:, 4] -= bboxes[:, 2]
         bboxes[:, 5] -= bboxes[:, 3]
-        bboxes[:, 2] -= bboxes[:, 4] / 2.
-        bboxes[:, 3] -= bboxes[:, 5] / 2.
+        bboxes[:, 2] += bboxes[:, 4] / 2.
+        bboxes[:, 3] += bboxes[:, 5] / 2.
         return img, bboxes
 
     def get_item(self, idx, mosaic=True):
@@ -117,14 +117,16 @@ class BasicDataset(torch.utils.data.Dataset):
             p[1] /= img.shape[0]
             p = p.clip(0, 1)
             # # for line/point only
-            # x1 = max(p[0].min() - 0.03, 0)
-            # x2 = min(p[0].max() + 0.03, 1)
-            # y1 = max(p[1].min() - 0.03, 0)
-            # y2 = min(p[1].max() + 0.03, 1)
-            x1 = p[0].min()
-            x2 = p[0].max()
-            y1 = p[1].min()
-            y2 = p[1].max()
+            if p.shape[1] <= 2:
+                x1 = max(p[0].min() - 0.03, 0)
+                x2 = min(p[0].max() + 0.03, 1)
+                y1 = max(p[1].min() - 0.03, 0)
+                y2 = min(p[1].max() + 0.03, 1)
+            else:
+                x1 = p[0].min()
+                x2 = p[0].max()
+                y1 = p[1].min()
+                y2 = p[1].max()
             c = polygon.label
             bboxes.append([0, c, x1, y1, x2, y2])
         if len(bboxes):
@@ -285,7 +287,7 @@ class CocoDataset(BasicDataset):
                  augments=TRAIN_AUGS,
                  multi_scale=False,
                  rect=False,
-                 with_label=True,
+                 with_label=False,
                  mosaic=False):
         super(CocoDataset, self).__init__(img_size=img_size,
                                           augments=augments,
