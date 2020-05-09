@@ -96,11 +96,19 @@ class BasicDataset(torch.utils.data.Dataset):
         if self.rect:
             scale = min(self.img_size[0] / w, self.img_size[1] / h)
             resize = ia.Sequential([
-                ia.Resize((int(w * scale), int(h * scale))),
-                ia.PadToFixedSize(*self.img_size)
+                ia.Resize({
+                    'width': int(w * scale),
+                    'height': int(h * scale)
+                }),
+                ia.PadToFixedSize(*self.img_size,
+                                  pad_cval=[123.675, 116.28, 103.53],
+                                  position='center')
             ])
         else:
-            resize = ia.Resize(self.img_size)
+            resize = ia.Resize({
+                'width': self.img_size[0],
+                'height': self.img_size[1]
+            })
 
         img = resize.augment_image(img)
         polygons = resize.augment_polygons(polygons)
