@@ -37,7 +37,7 @@ def train(data_dir,
                              multi_scale=multi_scale,
                              rect=rect,
                              with_label=True,
-                             mosaic=True)
+                             mosaic=False)
     train_loader = DataLoader(
         train_data,
         batch_size=batch_size,
@@ -82,8 +82,8 @@ def train(data_dir,
                       mixed_precision=mixed_precision)
     while trainer.epoch < epochs:
         trainer.step()
+        best = False
         if not notest:
-            best = False
             metrics = test(trainer.model, val_fetcher, conf_thres=0.1)
             if metrics > trainer.metrics:
                 best = True

@@ -17,7 +17,7 @@ def export2caffe(weights, num_classes, img_size):
     model.load_state_dict(weights['model'])
     model.eval()
     fuse(model)
-    name = 'YOLOV3'
+    name = 'RYOLOV3'
     dummy_input = torch.ones([1, 3, img_size[1], img_size[0]])
     pytorch2caffe.trans_net(model, dummy_input, name)
     pytorch2caffe.save_prototxt('{}.prototxt'.format(name))

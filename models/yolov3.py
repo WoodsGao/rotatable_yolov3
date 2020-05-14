@@ -29,7 +29,7 @@ class YOLOLayer(nn.Module):
             create_grids(self, img_size, (nx, ny), p.device, p.dtype)
 
         # p.view(bs, 255, 13, 13) -- > (bs, 3, 13, 13, 85)  # (bs, anchors, grid, grid, classes + xywh)
-        p = p.view(bs, self.na, self.nc + 5, self.ny,
+        p = p.view(bs, self.na, self.nc + 6, self.ny,
                    self.nx).permute(0, 1, 3, 4, 2).contiguous()  # prediction
 
         if self.training:
@@ -56,14 +56,14 @@ class YOLOLayer(nn.Module):
             # io[..., 2:4] = ((torch.sigmoid(io[..., 2:4]) * 2) ** 3) * self.anchor_wh  # wh power method
             io[..., :4] *= self.stride
 
-            torch.sigmoid_(io[..., 4:])
+            torch.sigmoid_(io[..., 4:-1])
 
             if self.nc == 1:
                 io[...,
                    5] = 1  # single-class model https://github.com/ultralytics/yolov3/issues/235
 
             # reshape from [1, 3, 13, 13, 85] to [1, 507, 85]
-            return io.view(bs, -1, 5 + self.nc), p
+            return io.view(bs, -1, 6 + self.nc), p
 
 
 class YOLOV3(nn.Module):
@@ -78,10 +78,10 @@ class YOLOV3(nn.Module):
                      [[10, 13], [16, 30], [33, 23]],
                  ]):
         super(YOLOV3, self).__init__()
-        self.stages = resnet34(pretrained=True).stages
+        self.backbone = resnet34(pretrained=True)
 
-        depth = 3
-        width = 512
+        depth = 5
+        width = [512, 256, 128]
         planes_list = [512 * 4, 256, 128]
         self.spp = SPP()
         self.fpn = FPN(planes_list, width, depth)
@@ -90,9 +90,9 @@ class YOLOV3(nn.Module):
         for i in range(3):
             self.head.append(
                 nn.Sequential(
-                    ConvNormAct(width, width),
-                    nn.Conv2d(width,
-                              len(anchors[i]) * (5 + num_classes), 1),
+                    ConvNormAct(width[i], width[i]),
+                    nn.Conv2d(width[i],
+                              len(anchors[i]) * (6 + num_classes), 1),
                 ))
             self.yolo_layers.append(
                 YOLOLayer(
@@ -107,16 +107,8 @@ class YOLOV3(nn.Module):
     def forward(self, x):
         img_size = x.shape[-2:]
 
-        x = self.stages[0](x)
-        x = self.stages[1](x)
-        x = self.stages[2](x)
-        x1 = x
-        x = self.stages[3](x)
-        x2 = x
-        x = self.stages[4](x)
-        x = self.spp(x)
-        x3 = x
-        features = [x3, x2, x1]
+        features = self.backbone(x)
+        features = [self.spp(features[-1]), features[-2], features[-3]]
         features = self.fpn(features)
         features = [
             head(feature) for feature, head in zip(features, self.head)

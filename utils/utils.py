@@ -1,21 +1,22 @@
+import math
 import random
-from pathlib import Path
 
 import cv2
 import numpy as np
 import torch
 import torch.distributed as dist
 import torch.nn as nn
+from scipy.optimize import linear_sum_assignment
+from shapely.geometry import MultiPoint, Polygon
 
 from pytorch_modules.nn import FocalBCELoss
 
 
-def load_classes(path):
-    # Loads *.names file at 'path'
-    with open(path, 'r') as f:
-        names = f.read().split('\n')
-    return list(filter(
-        None, names))  # filter removes empty strings (such as last line)
+def angle_loss(x, period=math.pi):
+    x %= period
+    x[x > period / 2.] *= -1
+    x[x < 0] += period
+    return x
 
 
 def xyxy2xywh(x):
@@ -42,17 +43,16 @@ def xywh2xyxy(x):
 
 def scale_coords(img1_shape, coords, img0_shape):
     # Rescale coords (xyxy) from img1_shape to img0_shape
-    coords[:, [0, 2]] *= img0_shape[1] / img1_shape[1]
-    coords[:, [1, 3]] *= img0_shape[0] / img1_shape[0]
+    coords[:, 0:8:2] *= img0_shape[1] / img1_shape[1]
+    coords[:, 1:8:2] *= img0_shape[0] / img1_shape[0]
     clip_coords(coords, img0_shape)
     return coords
 
 
-def clip_coords(boxes, img_shape):
-    # Clip bounding xyxy bounding boxes to image shape (height, width)
-    boxes[:, [0, 2]] = boxes[:, [0, 2]].clamp(min=0,
+def clip_coords(poly, img_shape):
+    poly[:, 0:8:2] = poly[:, 0:8:2].clamp(min=0,
                                               max=img_shape[1])  # clip x
-    boxes[:, [1, 3]] = boxes[:, [1, 3]].clamp(min=0,
+    poly[:, 1:8:2] = poly[:, 1:8:2].clamp(min=0,
                                               max=img_shape[0])  # clip y
 
 
@@ -152,6 +152,17 @@ def compute_ap(recall, precision):
     return ap
 
 
+def polygon_iou(polygon1, polygon2):
+    iou = torch.zeros(len(polygon2)).to(polygon2.device)
+    poly1 = Polygon(polygon1.cpu().numpy()[:8].reshape(4, 2)).convex_hull
+    for i, poly in enumerate(polygon2):
+        poly2 = Polygon(poly.cpu().numpy()[:8].reshape(4, 2)).convex_hull
+        inter_area = poly1.intersection(poly2).area
+        union_area = poly1.area + poly2.area - inter_area
+        iou[i] = inter_area / (union_area + 1e-5)
+    return iou
+
+
 def bbox_iou(box1, box2, x1y1x2y2=True, GIoU=False):
     # Returns the IoU of box1 to box2. box1 is 4, box2 is nx4
     box2 = box2.t()
@@ -203,10 +214,101 @@ def wh_iou(box1, box2):
     return inter_area / union_area  # iou
 
 
+def hungary(task_matrix):
+    task_matrix = task_matrix.copy()
+    # 行和列减0
+    nb, nr, nc = task_matrix.shape
+    task_matrix -= task_matrix.min(1, keepdims=True)
+    task_matrix -= task_matrix.min(2, keepdims=True)
+    solutions = []
+    for b in task_matrix:
+        line_count = 0
+        # 线数目小于矩阵长度时，进行循环
+        while (line_count < len(b)):
+            line_count = 0
+            row_zero_count = []
+            col_zero_count = []
+            for i in range(len(b)):
+                row_zero_count.append(np.sum(b[i] == 0))
+            for i in range(len(b[0])):
+                col_zero_count.append((np.sum(b[:, i] == 0)))
+            # 划线的顺序（分行或列）
+            line_order = []
+            row_or_col = []
+            for i in range(len(b[0]), 0, -1):
+                while (i in row_zero_count):
+                    line_order.append(row_zero_count.index(i))
+                    row_or_col.append(0)
+                    row_zero_count[row_zero_count.index(i)] = 0
+                while (i in col_zero_count):
+                    line_order.append(col_zero_count.index(i))
+                    row_or_col.append(1)
+                    col_zero_count[col_zero_count.index(i)] = 0
+            # 画线覆盖0，并得到行减最小值，列加最小值后的矩阵
+            delete_count_of_row = []
+            delete_count_of_rol = []
+            row_and_col = [i for i in range(len(b))]
+            for i in range(len(line_order)):
+                if row_or_col[i] == 0:
+                    delete_count_of_row.append(line_order[i])
+                else:
+                    delete_count_of_rol.append(line_order[i])
+                c = np.delete(b, delete_count_of_row, axis=0)
+                c = np.delete(c, delete_count_of_rol, axis=1)
+                line_count = len(delete_count_of_row) + len(
+                    delete_count_of_rol)
+                # 线数目等于矩阵长度时，跳出
+                if line_count == len(b):
+                    break
+                # 判断是否画线覆盖所有0，若覆盖，进行加减操作
+                if 0 not in c:
+                    row_sub = list(set(row_and_col) - set(delete_count_of_row))
+                    min_value = np.min(c)
+                    for i in row_sub:
+                        b[i] = b[i] - min_value
+                    for i in delete_count_of_rol:
+                        b[:, i] = b[:, i] + min_value
+                    break
+        row_ind, col_ind = linear_sum_assignment(b)
+        # best_solutions = list(task_matrix[row_ind, col_ind])
+        # print(row_ind, col_ind)
+        solution = np.zeros_like(task_matrix[0])
+        inds = np.stack([row_ind, col_ind], 1)
+        for ind in inds:
+            solution[tuple(ind)] = 1
+        solutions.append(solution)
+    solutions = np.stack(solutions, 0)
+    return solutions
+
+
+def xywht2polygon(rbox):
+    x, y, w, h, theta = rbox
+    w /= 2.
+    h /= 2.
+    p1 = torch.stack([
+        x - torch.sin(theta) * h - torch.cos(theta) * w,
+        y - torch.sin(theta) * w + torch.cos(theta) * h
+    ], 1)
+    p2 = torch.stack([
+        x + torch.sin(theta) * h - torch.cos(theta) * w,
+        y - torch.sin(theta) * w - torch.cos(theta) * h
+    ], 1)
+    p3 = torch.stack([
+        x + torch.sin(theta) * h + torch.cos(theta) * w,
+        y + torch.sin(theta) * w - torch.cos(theta) * h
+    ], 1)
+    p4 = torch.stack([
+        x - torch.sin(theta) * h + torch.cos(theta) * w,
+        y + torch.sin(theta) * w + torch.cos(theta) * h
+    ], 1)
+    points = torch.stack([p1, p2, p3, p4], 2).permute(0, 2, 1).contiguous()
+    return points
+
+
 def compute_loss(p, targets, model):  # predictions, targets, model
     ft = torch.cuda.FloatTensor if p[0].is_cuda else torch.Tensor
-    lcls, lbox, lobj = ft([0]), ft([0]), ft([0])
-    tcls, tbox, indices, anchor_vec = build_targets(model, targets)
+    lcls, lbox, lobj, lt = ft([0]), ft([0]), ft([0]), ft([0])
+    tcls, tbox, indices, anchor_vec, ttheta = build_targets(model, targets)
     # Define criteria
     BCE = nn.BCELoss()
     BCE = FocalBCELoss()
@@ -224,15 +326,33 @@ def compute_loss(p, targets, model):  # predictions, targets, model
 
             # GIoU
             pxy = torch.sigmoid(ps[:, 0:2])
-            pbox = torch.cat((pxy, torch.exp(ps[:, 2:4]) * anchor_vec[i]),
-                             1)  # predicted box
+            pbox = torch.cat(
+                (pxy, ps[:, 2:4].exp() * anchor_vec[i]),
+                1)  # predicted box
             giou = bbox_iou(pbox.t(), tbox[i], x1y1x2y2=False,
                             GIoU=True)  # giou computation
             lbox += (1.0 - giou).mean()  # giou loss
 
-            t = torch.zeros_like(ps[:, 5:])  # targets
+            # radius = w^2+h^2
+            # 长宽中找到最近的一点 也就是计算-cos(theta)和-cos(theta_wh-theta)和-cos(pi-theta_wh-theta)的最小值
+            l2 = angle_loss(ps[:, -1] - ttheta[i])
+            # true_points = xywht2polygon(
+            #     torch.cat([tbox[i], ttheta[i].unsqueeze(1)], 1).t())
+            # pred_points = xywht2polygon(
+            #     torch.cat([tbox[i], ps[:, -1:]], 1).t())
+            # # print(true_points[0], pred_points.unsqueeze(1).repeat(1, 4, 1, 1).permute(0, 2, 1, 3)[0])
+            # l2 = (pred_points.unsqueeze(1).repeat(1, 4, 1, 1).permute(
+            #     0, 2, 1, 3) - true_points.unsqueeze(1))
+            # l2 = l2[..., 0]**2 + l2[..., 1]**2
+            # solution = hungary(l2.cpu().detach().numpy())  # + np.eye(4) * 1
+            # solution = ft(solution)
+            # l2 *= solution
+            # l2 = l2.sum(1).sum(1)
+            lt += l2.mean()
+            # print(l2.shape)
+            t = torch.zeros_like(ps[:, 5:-1])  # targets
             t[range(nb), tcls[i]] = 1.0
-            lcls += BCE(ps[:, 5:].sigmoid(), t).mean()  # BCE
+            lcls += BCE(ps[:, 5:-1].sigmoid(), t).mean()  # BCE
 
         bce = BCE(pi[..., 4].sigmoid(), tobj)
         lobj += bce  # obj loss
@@ -240,7 +360,14 @@ def compute_loss(p, targets, model):  # predictions, targets, model
     lbox *= 3.54
     lobj *= 64.3
     lcls *= 37.4
-    loss = lbox + lobj + lcls
+    # lt = torch.cat(lt)
+    # if len(lt) > 100:
+    #     lt = lt.topk(100)[0]
+    # lt = lt.mean()
+    # print(lt)
+    lt *= 10
+    loss = lbox + lobj + lcls + lt
+    # loss = lt
     return loss
 
 
@@ -251,7 +378,7 @@ def build_targets(model, targets):
     else:
         yolo_layers = model.yolo_layers
     nt = len(targets)
-    tcls, tbox, indices, av = [], [], [], []
+    tcls, tbox, indices, av, ttheta = [], [], [], [], []
     for i in yolo_layers:
         # get number of grid points and anchor vec for this yolo layer
         ng, anchor_vec = i.ng, i.anchor_vec
@@ -274,6 +401,7 @@ def build_targets(model, targets):
 
         # Indices
         b, c = t[:, :2].long().t()  # target image, class
+        ttheta.append(t[:, 6].float())
         gxy = t[:, 2:4] * ng  # grid x, y
         gi, gj = gxy.long().t()  # grid x, y indices
         indices.append((b, a, gj, gi))
@@ -286,7 +414,7 @@ def build_targets(model, targets):
         # Class
         tcls.append(c)
 
-    return tcls, tbox, indices, av
+    return tcls, tbox, indices, av, ttheta
 
 
 def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.5):
@@ -294,58 +422,13 @@ def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.5):
     Removes detections with lower object confidence score than 'conf_thres'
     Non-Maximum Suppression to further filter detections.
     Returns detections with shape:
-        (x1, y1, x2, y2, object_conf, class_conf, class)
+        (x1, y1, x2, y2, x3, y3, x4, y4, conf, class)
     """
 
-    min_wh = 2  # (pixels) minimum box width and height
-
-    output = [torch.zeros((0, 7)).to(prediction[0].device)] * len(prediction)
+    output = [torch.zeros((0, 10)).to(prediction[0].device)] * len(prediction)
     for image_i, pred in enumerate(prediction):
-        # Experiment: Prior class size rejection
-        # x, y, w, h = pred[:, 0], pred[:, 1], pred[:, 2], pred[:, 3]
-        # a = w * h  # area
-        # ar = w / (h + 1e-16)  # aspect ratio
-        # n = len(w)
-        # log_w, log_h, log_a, log_ar = torch.log(w), torch.log(h), torch.log(a), torch.log(ar)
-        # shape_likelihood = np.zeros((n, 60), dtype=np.float32)
-        # x = np.concatenate((log_w.reshape(-1, 1), log_h.reshape(-1, 1)), 1)
-        # from scipy.stats import multivariate_normal
-        # for c in range(60):
-        # shape_likelihood[:, c] =
-        #   multivariate_normal.pdf(x, mean=mat['class_mu'][c, :2], cov=mat['class_cov'][c, :2, :2])
-
-        # Multiply conf by class conf to get combined confidence
-        class_conf, class_pred = pred[:, 5:].max(1)
-        pred[:, 4] *= class_conf
-
-        # # Merge classes (optional)
-        # class_pred[(class_pred.view(-1,1) == torch.LongTensor([2, 3, 5, 6, 7]).view(1,-1)).any(1)] = 2
-        #
-        # # Remove classes (optional)
-        # pred[class_pred != 2, 4] = 0.0
-
-        # Select only suitable predictions
-        i = (pred[:, 4] > conf_thres) & (
-            pred[:, 2:4] > min_wh).all(1) & torch.isfinite(pred).all(1)
+        i = (pred[:, 8] > conf_thres) & torch.isfinite(pred).all(1)
         pred = pred[i]
-
-        # If none are remaining => process next image
-        if len(pred) == 0:
-            continue
-
-        # Select predicted classes
-        class_conf = class_conf[i]
-        class_pred = class_pred[i].unsqueeze(1).float()
-
-        # Box (center x, center y, width, height) to (x1, y1, x2, y2)
-        pred[:, :4] = xywh2xyxy(pred[:, :4])
-        # pred[:, 4] *= class_conf  # improves mAP from 0.549 to 0.551
-
-        # Detections ordered as (x1y1x2y2, obj_conf, class_conf, class_pred)
-        pred = torch.cat((pred[:, :5], class_conf.unsqueeze(1), class_pred), 1)
-
-        # Get detections sorted by decreasing confidence scores
-        pred = pred[(-pred[:, 4]).argsort()]
 
         det_max = []
         nms_style = 'OR'  # 'OR' (default), 'AND', 'MERGE' (experimental)
@@ -366,7 +449,7 @@ def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.5):
                 # while len(ind):
                 # j = ind[0]
                 # det_max.append(dc[j:j + 1])  # save highest conf detection
-                # reject = (bbox_iou(dc[j], dc[ind]) > nms_thres).nonzero()
+                # reject = (polygon_iou(dc[j], dc[ind]) > nms_thres).nonzero()
                 # [ind.pop(i) for i in reversed(reject)]
 
                 # METHOD2
@@ -374,12 +457,12 @@ def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.5):
                     det_max.append(dc[:1])  # save highest conf detection
                     if len(dc) == 1:  # Stop if we're at the last detection
                         break
-                    iou = bbox_iou(dc[0], dc[1:])  # iou with other boxes
+                    iou = polygon_iou(dc[0], dc[1:])  # iou with other boxes
                     dc = dc[1:][iou < nms_thres]  # remove ious > threshold
 
             elif nms_style == 'AND':  # requires overlap, single boxes erased
                 while len(dc) > 1:
-                    iou = bbox_iou(dc[0], dc[1:])  # iou with other boxes
+                    iou = polygon_iou(dc[0], dc[1:])  # iou with other boxes
                     if iou.max() > 0.5:
                         det_max.append(dc[:1])
                     dc = dc[1:][iou < nms_thres]  # remove ious > threshold
@@ -389,9 +472,9 @@ def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.5):
                     if len(dc) == 1:
                         det_max.append(dc)
                         break
-                    i = bbox_iou(dc[0], dc) > nms_thres  # iou with other boxes
-                    weights = dc[i, 4:5]
-                    dc[0, :4] = (weights * dc[i, :4]).sum(0) / weights.sum()
+                    i = polygon_iou(dc[0], dc) > nms_thres  # iou with other boxes
+                    weights = dc[i, 8:9]
+                    dc[0, :8] = (weights * dc[i, :8]).sum(0) / weights.sum()
                     det_max.append(dc[:1])
                     dc = dc[i == 0]
 
@@ -402,14 +485,14 @@ def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.5):
                         det_max.append(dc)
                         break
                     det_max.append(dc[:1])
-                    iou = bbox_iou(dc[0], dc[1:])  # iou with other boxes
+                    iou = polygon_iou(dc[0], dc[1:])  # iou with other boxes
                     dc = dc[1:]
-                    dc[:, 4] *= torch.exp(-iou**2 / sigma)  # decay confidences
-                    # dc = dc[dc[:, 4] > nms_thres]  # new line per https://github.com/ultralytics/yolov3/issues/362
+                    dc[:, 8] *= torch.exp(-iou**2 / sigma)  # decay confidences
+                    # dc = dc[dc[:, 8] > nms_thres]  # new line per https://github.com/ultralytics/yolov3/issues/362
 
         if len(det_max):
             det_max = torch.cat(det_max)  # concatenate
-            output[image_i] = det_max[(-det_max[:, 4]).argsort()]  # sort
+            output[image_i] = det_max[(-det_max[:, 8]).argsort()]  # sort
     return output
 
 
@@ -453,9 +536,9 @@ def apply_classifier(x, model, img, im0):
 
 
 # Plotting functions ---------------------------------------------------------------------------------------------------
-def show_batch(inputs, targets):
+def show_target(inputs, targets):
     imgs = inputs.clone()[:8]
-    bboxes = targets[:8]
+    bboxes = targets
     imgs *= torch.FloatTensor([58.395, 57.12,
                                57.375]).reshape(1, 3, 1, 1).to(imgs.device)
     imgs += torch.FloatTensor([123.675, 116.28,
@@ -465,13 +548,42 @@ def show_batch(inputs, targets):
                                       1).byte().cpu().numpy()[..., ::-1]
     imgs = np.ascontiguousarray(imgs)
     for i in range(len(bboxes)):
-        bbox = bboxes[i]
-        bbox = bbox[bbox[..., 4] > 0.3]
+        ii = int(bboxes[i, 0])
+        if ii >= len(imgs):
+            continue
+        img = imgs[ii]
+        xywh = bboxes[i:i + 1, 2:]
+        xywh[:, (0, 2)] *= img.shape[1]
+        xywh[:, (1, 3)] *= img.shape[0]
+        # xyxy = xywh2xyxy(xywh)
+        plot_one_poly(xyxy[0], img)
+        imgs[ii] = img
+    imgs = imgs.reshape(-1, imgs.shape[2], imgs.shape[3])
+
+    save_img = imgs
+    cv2.imwrite('batch.png', save_img)
+
+
+def show_batch(inputs, targets):
+    imgs = inputs.clone()[:8]
+    polys = targets[:8]
+    imgs *= torch.FloatTensor([58.395, 57.12,
+                               57.375]).reshape(1, 3, 1, 1).to(imgs.device)
+    imgs += torch.FloatTensor([123.675, 116.28,
+                               103.53]).reshape(1, 3, 1, 1).to(imgs.device)
+
+    imgs = imgs.clamp(0, 255).permute(0, 2, 3,
+                                      1).byte().cpu().numpy()[..., ::-1]
+    imgs = np.ascontiguousarray(imgs)
+    for i in range(len(polys)):
+        poly = polys[i].cpu().numpy()
+        poly = poly[poly[..., 8] > 0.3]
         img = imgs[i]
-        clip_coords(bbox, img.shape)
-        for *xyxy, obj_conf, cls_conf, c in bbox:
-            label = '%d %lf' % (c, obj_conf * cls_conf)
-            plot_one_box(xyxy, img, label=label)
+        # clip_coords(poly, img.shape)
+        for *xyxy, conf, c in poly:
+            label = '%d %lf' % (c, conf)
+            xyxy = np.int32(xyxy)
+            plot_one_poly(xyxy, img, label=label)
         imgs[i] = img
     imgs = imgs.reshape(-1, imgs.shape[2], imgs.shape[3])
 
@@ -479,17 +591,16 @@ def show_batch(inputs, targets):
     cv2.imwrite('batch.png', save_img)
 
 
-def plot_one_box(bbox, img, color=None, label=None, line_thickness=None):
-    # Plots one bounding box on image img
+def plot_one_poly(poly, img, color=None, label=None, line_thickness=None):
     tl = line_thickness or round(
         0.002 * (img.shape[0] + img.shape[1]) / 2) + 1  # line thickness
     color = color or [random.randint(0, 255) for _ in range(3)]
-    c1, c2 = (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3]))
-    cv2.rectangle(img, c1, c2, color, thickness=tl)
+    cv2.drawContours(img, [poly.reshape(-1, 1, 2)], 0, color, thickness=tl)
     if label:
         tf = max(tl - 1, 1)  # font thickness
         t_size = cv2.getTextSize(label, 0, fontScale=tl / 3, thickness=tf)[0]
-        c2 = c1[0] + t_size[0], c1[1] - t_size[1] - 3
+        c1 = (int(poly[0]), int(poly[1]))
+        c2 = (c1[0] + t_size[0], c1[1] - t_size[1] - 3)
         cv2.rectangle(img, c1, c2, color, -1)  # filled
         cv2.putText(img,
                     label, (c1[0], c1[1] - 2),

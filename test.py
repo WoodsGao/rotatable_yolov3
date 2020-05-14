@@ -9,7 +9,7 @@ from utils.datasets import CocoDataset
 from torch.utils.data import DataLoader
 from pytorch_modules.utils import device, Fetcher
 from pytorch_modules.utils import device
-from utils.utils import compute_loss, non_max_suppression, clip_coords, xywh2xyxy, bbox_iou, ap_per_class, show_batch
+from utils.utils import compute_loss, non_max_suppression, clip_coords, xywh2xyxy, bbox_iou, ap_per_class, show_batch, xywht2polygon, polygon_iou
 
 
 @torch.no_grad()
@@ -33,7 +33,12 @@ def test(model, fetcher, conf_thres=1e-3, nms_thres=0.5):
         # Compute loss
         val_loss += compute_loss(train_out, targets,
                                  model).item()  # GIoU, obj, cls
-
+        nb, nbi, _ = inf_out.shape
+        polygons = xywht2polygon(
+            torch.cat([inf_out[..., :4], inf_out[..., -1:]], 2).reshape(-1, 5).t()).view(nb, nbi, 8)
+        conf, cls_idx = inf_out[..., 5:-1].max(2)
+        conf *= inf_out[..., 4]
+        inf_out = torch.cat([polygons, torch.stack([conf, cls_idx.float()], 2)], 2)
         # Run NMS
         output = non_max_suppression(inf_out,
                                      conf_thres=conf_thres,
@@ -41,7 +46,6 @@ def test(model, fetcher, conf_thres=1e-3, nms_thres=0.5):
         # Plot images with bounding boxes
         if idx == 0:
             show_batch(imgs, output)
-
 
         # Statistics per image
         for si, pred in enumerate(output):
@@ -55,26 +59,21 @@ def test(model, fetcher, conf_thres=1e-3, nms_thres=0.5):
                     stats.append(([], torch.Tensor(), torch.Tensor(), tcls))
                 continue
 
-            # Append to text file
-            # with open('test.txt', 'a') as file:
-            #    [file.write('%11.5g' * 7 % tuple(x) + '\n') for x in pred]
-
             # Clip boxes to image bounds
-            clip_coords(pred, (height, width))
+            # clip_coords(pred, (height, width))
 
             # Assign all predictions as incorrect
             correct = [0] * len(pred)
             if nl:
                 detected = []
                 tcls_tensor = labels[:, 0]
-
-                # target boxes
-                tbox = xywh2xyxy(labels[:, 1:5])
-                tbox[:, [0, 2]] *= width
-                tbox[:, [1, 3]] *= height
+                # target 
+                tpoly = xywht2polygon(labels[:, 1:].t())
+                tpoly[:, 0:8:2] *= width
+                tpoly[:, 1:8:2] *= height
 
                 # Search for correct predictions
-                for i, (*pbox, pconf, pcls_conf, pcls) in enumerate(pred):
+                for i, (*ppoly, pconf, pcls) in enumerate(pred):
 
                     # Break if all targets already located in image
                     if len(detected) == nl:
@@ -83,10 +82,10 @@ def test(model, fetcher, conf_thres=1e-3, nms_thres=0.5):
                     # Continue if predicted class not among image classes
                     if pcls.item() not in tcls:
                         continue
-
+                    ppoly = torch.FloatTensor(ppoly).to(pred.device)
                     # Best iou, index between pred and targets
                     m = (pcls == tcls_tensor).nonzero().view(-1)
-                    iou, bi = bbox_iou(pbox, tbox[m]).max(0)
+                    iou, bi = polygon_iou(ppoly, tpoly[m]).max(0)
 
                     # If iou > threshold and class is correct mark as correct
                     if iou > 0.5 and m[
@@ -95,7 +94,7 @@ def test(model, fetcher, conf_thres=1e-3, nms_thres=0.5):
                         detected.append(m[bi])
 
             # Append statistics (correct, conf, pcls, tcls)
-            stats.append((correct, pred[:, 4].cpu(), pred[:, 6].cpu(), tcls))
+            stats.append((correct, pred[:, -2].cpu(), pred[:, -1].cpu(), tcls))
         pbar.set_description('loss: %8g' % (val_loss / (idx + 1)))
 
     # Compute statistics
@@ -165,5 +164,8 @@ if __name__ == '__main__':
     if opt.weights:
         state_dict = torch.load(opt.weights, map_location='cpu')
         model.load_state_dict(state_dict['model'])
-    metrics = test(model, val_fetcher, conf_thres=opt.conf_thres, nms_thres=opt.nms_thres)
+    metrics = test(model,
+                   val_fetcher,
+                   conf_thres=opt.conf_thres,
+                   nms_thres=opt.nms_thres)
     print('metrics: %8g' % (metrics))

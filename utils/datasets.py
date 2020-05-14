@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import os.path as osp
 import random
@@ -15,29 +16,29 @@ from pytorch_modules.utils import IMG_EXT
 TRAIN_AUGS = ia.SomeOf(
     [0, 3],
     [
-        # ia.WithColorspace(
-        #     to_colorspace='HSV',
-        #     from_colorspace='RGB',
-        #     children=ia.Sequential([
-        #         ia.WithChannels(
-        #             0,
-        #             ia.SomeOf([0, None],
-        #                       [ia.Add((-10, 10)),
-        #                        ia.Multiply((0.95, 1.05))],
-        #                       random_state=True)),
-        #         ia.WithChannels(
-        #             1,
-        #             ia.SomeOf([0, None],
-        #                       [ia.Add((-50, 50)),
-        #                        ia.Multiply((0.8, 1.2))],
-        #                       random_state=True)),
-        #         ia.WithChannels(
-        #             2,
-        #             ia.SomeOf([0, None],
-        #                       [ia.Add((-50, 50)),
-        #                        ia.Multiply((0.8, 1.2))],
-        #                       random_state=True)),
-        #     ])),
+        ia.WithColorspace(
+            to_colorspace='HSV',
+            from_colorspace='RGB',
+            children=ia.Sequential([
+                ia.WithChannels(
+                    0,
+                    ia.SomeOf([0, None],
+                              [ia.Add((-10, 10)),
+                               ia.Multiply((0.95, 1.05))],
+                              random_state=True)),
+                ia.WithChannels(
+                    1,
+                    ia.SomeOf([0, None],
+                              [ia.Add((-50, 50)),
+                               ia.Multiply((0.8, 1.2))],
+                              random_state=True)),
+                ia.WithChannels(
+                    2,
+                    ia.SomeOf([0, None],
+                              [ia.Add((-50, 50)),
+                               ia.Multiply((0.8, 1.2))],
+                              random_state=True)),
+            ])),
         ia.Dropout([0.015, 0.1]),  # drop 5% or 20% of all pixels
         ia.Sharpen((0.0, 1.0)),  # sharpen the image
         ia.Affine(
@@ -78,15 +79,11 @@ class BasicDataset(torch.utils.data.Dataset):
         return None, None
 
     def __getitem__(self, idx):
-        img, bboxes = self.get_item(idx)
+        img, polygons = self.get_item(idx)
         img = img.transpose(2, 0, 1)
         img = np.ascontiguousarray(img)
-        img, bboxes = torch.ByteTensor(img), torch.FloatTensor(bboxes)
-        bboxes[:, 4] -= bboxes[:, 2]
-        bboxes[:, 5] -= bboxes[:, 3]
-        bboxes[:, 2] += bboxes[:, 4] / 2.
-        bboxes[:, 3] += bboxes[:, 5] / 2.
-        return img, bboxes
+        img, polygons = torch.ByteTensor(img), torch.FloatTensor(polygons)
+        return img, polygons
 
     def get_item(self, idx, mosaic=True):
         img, polygons = self.get_data(idx)
@@ -118,31 +115,20 @@ class BasicDataset(torch.utils.data.Dataset):
             img = augments.augment_image(img)
             polygons = augments.augment_polygons(polygons)
 
-        bboxes = []
+        labels = []
         for polygon in polygons.polygons:
-            p = polygon.exterior.reshape(-1, 2).transpose(1, 0)
-            p[0] /= img.shape[1]
-            p[1] /= img.shape[0]
+            p = polygon.exterior.reshape(-1, 2)
+            p[:, 0] /= img.shape[1]
+            p[:, 1] /= img.shape[0]
             p = p.clip(0, 1)
-            # # for line/point only
-            if p.shape[1] <= 2:
-                x1 = max(p[0].min() - 0.03, 0)
-                x2 = min(p[0].max() + 0.03, 1)
-                y1 = max(p[1].min() - 0.03, 0)
-                y2 = min(p[1].max() + 0.03, 1)
-            else:
-                x1 = p[0].min()
-                x2 = p[0].max()
-                y1 = p[1].min()
-                y2 = p[1].max()
             c = polygon.label
-            bboxes.append([0, c, x1, y1, x2, y2])
-        if len(bboxes):
-            bboxes = np.float32(bboxes)
+            labels.append([0, c] + p.reshape(-1).tolist())
+        if len(labels):
+            labels = np.float32(labels)
         else:
-            bboxes = np.zeros([0, 6], dtype=np.float32)
+            labels = np.zeros([0, 10], dtype=np.float32)
         if self.mosaic and mosaic:
-            mosaic_list = [(img, bboxes)]
+            mosaic_list = [(img, labels)]
             for _ in range(3):
                 next_idx = random.randint(0, self.__len__() - 1)
                 mosaic_list.append(self.get_item(next_idx, False))
@@ -158,32 +144,49 @@ class BasicDataset(torch.utils.data.Dataset):
             img3 = mosaic_list[3][0][cut_y:, cut_x:]
             img2 = np.concatenate([img2, img3], 1)
             img = np.concatenate([img0, img2], 0)
-            bboxes0 = mosaic_list[0][1]
-            bboxes0[:, 2] = bboxes0[:, 2].clip(0, cut_x_ratio)
-            bboxes0[:, 4] = bboxes0[:, 4].clip(0, cut_x_ratio)
-            bboxes0[:, 3] = bboxes0[:, 3].clip(0, cut_y_ratio)
-            bboxes0[:, 5] = bboxes0[:, 5].clip(0, cut_y_ratio)
-            bboxes1 = mosaic_list[1][1]
-            bboxes1[:, 2] = bboxes1[:, 2].clip(cut_x_ratio, 1)
-            bboxes1[:, 4] = bboxes1[:, 4].clip(cut_x_ratio, 1)
-            bboxes1[:, 3] = bboxes1[:, 3].clip(0, cut_y_ratio)
-            bboxes1[:, 5] = bboxes1[:, 5].clip(0, cut_y_ratio)
-            bboxes2 = mosaic_list[2][1]
-            bboxes2[:, 2] = bboxes2[:, 2].clip(0, cut_x_ratio)
-            bboxes2[:, 4] = bboxes2[:, 4].clip(0, cut_x_ratio)
-            bboxes2[:, 3] = bboxes2[:, 3].clip(cut_y_ratio, 1)
-            bboxes2[:, 5] = bboxes2[:, 5].clip(cut_y_ratio, 1)
-            bboxes3 = mosaic_list[3][1]
-            bboxes3[:, 2] = bboxes3[:, 2].clip(cut_x_ratio, 1)
-            bboxes3[:, 4] = bboxes3[:, 4].clip(cut_x_ratio, 1)
-            bboxes3[:, 3] = bboxes3[:, 3].clip(cut_y_ratio, 1)
-            bboxes3[:, 5] = bboxes3[:, 5].clip(cut_y_ratio, 1)
-            bboxes = np.concatenate([bboxes0, bboxes1, bboxes2, bboxes3], 0)
+            labels0 = mosaic_list[0][1]
+            labels0[:, 2] = labels0[:, 2].clip(0, cut_x_ratio)
+            labels0[:, 3] = labels0[:, 3].clip(0, cut_y_ratio)
+            labels1 = mosaic_list[1][1]
+            labels1[:, 2] = labels1[:, 2].clip(cut_x_ratio, 1)
+            labels1[:, 3] = labels1[:, 3].clip(0, cut_y_ratio)
+            labels2 = mosaic_list[2][1]
+            labels2[:, 2] = labels2[:, 2].clip(0, cut_x_ratio)
+            labels2[:, 3] = labels2[:, 3].clip(cut_y_ratio, 1)
+            labels3 = mosaic_list[3][1]
+            labels3[:, 2] = labels3[:, 2].clip(cut_x_ratio, 1)
+            labels3[:, 3] = labels3[:, 3].clip(cut_y_ratio, 1)
+            labels = np.concatenate([labels0, labels1, labels2, labels3], 0)
         # filter small items
-        bboxes = bboxes[bboxes[:, 4] - bboxes[:, 2] > 3e-3]
-        bboxes = bboxes[bboxes[:, 5] - bboxes[:, 3] > 3e-3]
-        
-        return img, bboxes
+        labels = labels[labels[:, 2::2].max(1) - labels[:, 2::2].min(1) > 3e-3]
+        labels = labels[labels[:, 3::2].max(1) - labels[:, 3::2].min(1) > 3e-3]
+        if self.mosaic and not mosaic:
+            return img, labels
+        x, y, w, h, theta = [], [], [], [], []
+        for l in labels:
+            polygon = l[2:]
+            xy, wh, t = cv2.minAreaRect(polygon.reshape(4, 1, 2))
+            # t /= 180 / math.pi
+            # t += 90
+            # t /= 90.
+            x.append(xy[0])
+            y.append(xy[1])
+            if wh[0] < wh[1]:
+                w_ = wh[1]
+                h_ = wh[0]
+                t += 90
+            else:
+                w_ = wh[0]
+                h_ = wh[1]
+            w.append(w_)
+            h.append(h_)
+            theta.append(t)
+        # print(theta)
+        # labels = np.stack([labels[:, 0], labels[:, 1], x, y, w, h], 1)
+        labels = np.stack([labels[:, 0], labels[:, 1], x, y, w, h, theta], 1)
+        # print(labels[:, 4].mean() * 416, labels[:, 5].mean() * 416)
+        labels[:, -1] /= 180. / np.pi
+        return img, labels
 
     def __len__(self):
         return len(self.data)
@@ -214,78 +217,6 @@ class BasicDataset(torch.utils.data.Dataset):
             w = int(w * scale / 32) * 32
             imgs = F.interpolate(imgs, (h, w))
         return (imgs, labels)
-
-
-class YOLODataset(BasicDataset):
-    def __init__(self,
-                 path,
-                 img_size=224,
-                 augments=TRAIN_AUGS,
-                 multi_scale=False,
-                 rect=False,
-                 with_label=True,
-                 mosaic=False):
-        super(YOLODataset, self).__init__(img_size=img_size,
-                                          augments=augments,
-                                          multi_scale=multi_scale,
-                                          rect=rect,
-                                          with_label=with_label,
-                                          mosaic=mosaic)
-        self.path = path
-        self.classes = []
-        self.build_data()
-        self.data.sort()
-
-    def build_data(self):
-        data_dir = osp.dirname(self.path)
-        with open(osp.join(data_dir, 'classes.names'), 'r') as f:
-            self.classes = f.readlines()
-        image_dir = osp.join(data_dir, 'images')
-        label_dir = osp.join(data_dir, 'labels')
-        with open(self.path, 'r') as f:
-            names = [n for n in f.read().split('\n') if n]
-        names = [name for name in names if osp.splitext(name)[1] in IMG_EXT]
-        for name in names:
-            bboxes = []
-            label_name = osp.join(label_dir, osp.splitext(name)[0] + '.txt')
-            if osp.exists(label_name):
-                with open(label_name, 'r') as f:
-                    lines = [[float(x) for x in l.split(' ') if x]
-                             for l in f.readlines() if l]
-
-                for l in lines:
-                    if len(l) != 5:
-                        continue
-                    c = l[0]
-                    x = l[1]
-                    y = l[2]
-                    w = l[3] / 2.
-                    h = l[4] / 2.
-                    xmin = x - w
-                    xmax = x + w
-                    ymin = y - h
-                    ymax = y + h
-                    if ymax > 1 or xmax > 1 or ymin > 1 or xmin > 1:
-                        continue
-                    if ymax < 0 or xmax < 0 or ymin < 0 or xmin < 0:
-                        continue
-                    if ymax <= ymin or xmax <= xmin:
-                        continue
-                    bboxes.append([c, xmin, ymin, xmax, ymax])
-            self.data.append([osp.join(image_dir, name), bboxes])
-            if self.with_label:
-                self.data = [d for d in self.data if len(d[1]) > 0]
-
-    def get_data(self, idx):
-        img = cv2.imread(self.data[idx][0])
-        polygons = []
-        for c, xmin, ymin, xmax, ymax in self.data[idx][1]:
-            polygons.append(
-                Polygon(
-                    np.float32(
-                        [xmin, ymin, xmin, ymax, xmax, ymax, xmax,
-                         ymin]).reshape(-1, 2), c))
-        polygons = PolygonsOnImage(polygons, img.shape)
 
 
 class CocoDataset(BasicDataset):
