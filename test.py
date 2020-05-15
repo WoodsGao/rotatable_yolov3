@@ -1,15 +1,18 @@
-import os.path as osp
 import argparse
+import os.path as osp
+
+import numpy as np
 import torch
 import torch.distributed as dist
-import numpy as np
-from tqdm import tqdm
-from models import YOLOV3
-from utils.datasets import CocoDataset
 from torch.utils.data import DataLoader
-from pytorch_modules.utils import device, Fetcher
-from pytorch_modules.utils import device
-from utils.utils import compute_loss, non_max_suppression, clip_coords, xywh2xyxy, bbox_iou, ap_per_class, show_batch, xywht2polygon, polygon_iou
+from tqdm import tqdm
+
+from models import YOLOV3
+from pytorch_modules.utils import Fetcher, device
+from utils.datasets import CocoDataset
+from utils.utils import (ap_per_class, bbox_iou, clip_coords, compute_loss,
+                         non_max_suppression, polygon_iou, show_batch,
+                         xywh2xyxy, xywht2polygon)
 
 
 @torch.no_grad()
@@ -35,10 +38,12 @@ def test(model, fetcher, conf_thres=1e-3, nms_thres=0.5):
                                  model).item()  # GIoU, obj, cls
         nb, nbi, _ = inf_out.shape
         polygons = xywht2polygon(
-            torch.cat([inf_out[..., :4], inf_out[..., -1:]], 2).reshape(-1, 5).t()).view(nb, nbi, 8)
+            torch.cat([inf_out[..., :4], inf_out[..., -1:]],
+                      2).reshape(-1, 5).t()).view(nb, nbi, 8)
         conf, cls_idx = inf_out[..., 5:-1].max(2)
         conf *= inf_out[..., 4]
-        inf_out = torch.cat([polygons, torch.stack([conf, cls_idx.float()], 2)], 2)
+        inf_out = torch.cat(
+            [polygons, torch.stack([conf, cls_idx.float()], 2)], 2)
         # Run NMS
         output = non_max_suppression(inf_out,
                                      conf_thres=conf_thres,
@@ -67,7 +72,7 @@ def test(model, fetcher, conf_thres=1e-3, nms_thres=0.5):
             if nl:
                 detected = []
                 tcls_tensor = labels[:, 0]
-                # target 
+                # target
                 tpoly = xywht2polygon(labels[:, 1:].t())
                 tpoly[:, 0:8:2] *= width
                 tpoly[:, 1:8:2] *= height
@@ -99,6 +104,33 @@ def test(model, fetcher, conf_thres=1e-3, nms_thres=0.5):
 
     # Compute statistics
     stats = [np.concatenate(x, 0) for x in list(zip(*stats))]
+
+    # sync stats
+    if dist.is_initialized():
+        for i in range(len(stats)):
+            stat = torch.FloatTensor(stats[i]).to(device)
+            ls = torch.IntTensor([len(stat)]).to(device)
+            ls_list = [
+                torch.IntTensor([0]).to(device)
+                for _ in range(dist.get_world_size())
+            ]
+            dist.all_gather(ls_list, ls)
+            ls_list = [ls_item.item() for ls_item in ls_list]
+            max_ls = max(ls_list)
+            if len(stat) < max_ls:
+                stat = torch.cat(
+                    [stat, torch.zeros(max_ls - len(stat)).to(device)])
+            stat_list = [
+                torch.zeros(max_ls).to(device)
+                for _ in range(dist.get_world_size())
+            ]
+            dist.all_gather(stat_list, stat)
+            stat_list = [
+                stat_list[si][:ls_list[si]]
+                for si in range(dist.get_world_size()) if ls_list[si] > 0
+            ]
+            stat = torch.cat(stat_list)
+            stats[i] = stat.cpu().numpy()
 
     if len(stats):
         p, r, ap, f1, ap_class = ap_per_class(*stats)
