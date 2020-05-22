@@ -5,8 +5,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from pytorch_modules.backbones import resnet34, resnet50
-from pytorch_modules.nn import ConvNormAct
+from pytorch_modules.backbones import resnet34, resnet50, resnext50_32x4d, mobilenet_v2
+from pytorch_modules.nn import ConvNormAct, SeparableConvNormAct
 from pytorch_modules.utils import initialize_weights
 
 from .fpn import FPN
@@ -69,28 +69,31 @@ class YOLOLayer(nn.Module):
 class YOLOV3(nn.Module):
     # YOLOv3 object detection model
 
-    def __init__(self,
-                 num_classes,
-                 img_size=(416, 416),
-                 anchors=[
-                     [[116, 90], [156, 198], [373, 326]],
-                     [[30, 61], [62, 45], [59, 119]],
-                     [[10, 13], [16, 30], [33, 23]],
-                 ]):
+    def __init__(
+            self,
+            num_classes,
+            img_size=(416, 416),
+            anchors=[
+                 [[116, 90], [156, 198], [373, 326]],
+                 [[30, 61], [62, 45], [59, 119]],
+                 [[10, 13], [16, 30], [33, 23]],
+            ]):
         super(YOLOV3, self).__init__()
-        self.backbone = resnet34(pretrained=True)
+        self.backbone = mobilenet_v2(pretrained=True)
 
         depth = 5
         width = [512, 256, 128]
-        planes_list = [512 * 4, 256, 128]
-        self.spp = SPP()
+        planes_list = [1280, 96, 32]
+        self.spp = nn.Sequential(ConvNormAct(1280, 320, 1, activate=nn.ReLU6(True)), SPP())
         self.fpn = FPN(planes_list, width, depth)
         self.head = nn.ModuleList([])
         self.yolo_layers = nn.ModuleList([])
         for i in range(3):
             self.head.append(
                 nn.Sequential(
-                    ConvNormAct(width[i], width[i]),
+                    SeparableConvNormAct(width[i],
+                                         width[i],
+                                         activate=nn.ReLU6(True)),
                     nn.Conv2d(width[i],
                               len(anchors[i]) * (6 + num_classes), 1),
                 ))
@@ -108,6 +111,7 @@ class YOLOV3(nn.Module):
         img_size = x.shape[-2:]
 
         features = self.backbone(x)
+        # features = [features[-1], features[-2], features[-3]]
         features = [self.spp(features[-1]), features[-2], features[-3]]
         features = self.fpn(features)
         features = [

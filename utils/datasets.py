@@ -8,56 +8,121 @@ import cv2
 import numpy as np
 import torch
 import torch.nn.functional as F
-from imgaug import augmenters as ia
+import imgaug as ia
+from imgaug import augmenters as iaa
 from imgaug.augmentables.polys import Polygon, PolygonsOnImage
 
 from pytorch_modules.utils import IMG_EXT
 
-TRAIN_AUGS = ia.SomeOf(
-    [0, 3],
+# Sometimes(0.5, ...) applies the given augmenter in 50% of all cases,
+# e.g. Sometimes(0.5, GaussianBlur(0.3)) would blur roughly every second image.
+sometimes = lambda aug: iaa.Sometimes(0.5, aug)
+
+# Define our sequence of augmentation steps that will be applied to every image
+# All augmenters with per_channel=0.5 will sample one value _per image_
+# in 50% of all cases. In all other cases they will sample new values
+# _per channel_.
+
+TRAIN_AUGS = iaa.Sequential(
     [
-        ia.WithColorspace(
-            to_colorspace='HSV',
-            from_colorspace='RGB',
-            children=ia.Sequential([
-                ia.WithChannels(
+        # apply the following augmenters to most images
+        iaa.Fliplr(0.5),  # horizontally flip 50% of all images
+        iaa.Flipud(0.2),  # vertically flip 20% of all images
+        # crop images by -5% to 10% of their height/width
+        sometimes(
+            iaa.CropAndPad(
+                percent=(-0.05, 0.1), pad_mode=ia.ALL, pad_cval=(0, 255))),
+        sometimes(
+            iaa.Affine(
+                scale={
+                    "x": (0.8, 1.2),
+                    "y": (0.8, 1.2)
+                },  # scale images to 80-120% of their size, individually per axis
+                translate_percent={
+                    "x": (-0.2, 0.2),
+                    "y": (-0.2, 0.2)
+                },  # translate by -20 to +20 percent (per axis)
+                rotate=(-90, 90),  # rotate by -45 to +45 degrees
+                shear=(-16, 16),  # shear by -16 to +16 degrees
+                order=[
                     0,
-                    ia.SomeOf([0, None],
-                              [ia.Add((-10, 10)),
-                               ia.Multiply((0.95, 1.05))],
-                              random_state=True)),
-                ia.WithChannels(
-                    1,
-                    ia.SomeOf([0, None],
-                              [ia.Add((-50, 50)),
-                               ia.Multiply((0.8, 1.2))],
-                              random_state=True)),
-                ia.WithChannels(
-                    2,
-                    ia.SomeOf([0, None],
-                              [ia.Add((-50, 50)),
-                               ia.Multiply((0.8, 1.2))],
-                              random_state=True)),
-            ])),
-        ia.Dropout([0.015, 0.1]),  # drop 5% or 20% of all pixels
-        ia.Sharpen((0.0, 1.0)),  # sharpen the image
-        ia.Affine(
-            scale=(0.8, 1.2),
-            translate_percent=(-0.1, 0.1),
-            rotate=(-90, 90),
-            shear=(-0.1,
-                   0.1)),  # rotate by -45 to 45 degrees (affects heatmaps)
-        # ia.ElasticTransformation(
-        #     alpha=(0, 10),
-        #     sigma=(0, 10)),  # apply water effect (affects heatmaps)
-        # ia.PiecewiseAffine(scale=(0, 0.03), nb_rows=(2, 6), nb_cols=(2, 6)),
-        ia.GaussianBlur((0, 3)),
-        ia.Fliplr(0.1),
-        ia.Flipud(0.1),
-        # ia.LinearContrast((0.5, 1)),
-        ia.AdditiveGaussianNoise(loc=(0, 10), scale=(0, 10))
+                    1
+                ],  # use nearest neighbour or bilinear interpolation (fast)
+                cval=(
+                    0,
+                    255),  # if mode is constant, use a cval between 0 and 255
+                mode=ia.
+                ALL  # use any of scikit-image's warping modes (see 2nd image from the top for examples)
+            )),
+        # execute 0 to 5 of the following (less important) augmenters per image
+        # don't execute all of them, as that would often be way too strong
+        iaa.SomeOf(
+            (0, 5),
+            [
+                sometimes(
+                    iaa.Superpixels(p_replace=(0, 1.0), n_segments=(20, 200))
+                ),  # convert images into their superpixel representation
+                iaa.OneOf([
+                    iaa.GaussianBlur(
+                        (0,
+                         3.0)),  # blur images with a sigma between 0 and 3.0
+                    iaa.AverageBlur(
+                        k=(2, 7)
+                    ),  # blur image using local means with kernel sizes between 2 and 7
+                    iaa.MedianBlur(
+                        k=(3, 11)
+                    ),  # blur image using local medians with kernel sizes between 2 and 7
+                ]),
+                iaa.Sharpen(alpha=(0, 1.0),
+                            lightness=(0.75, 1.5)),  # sharpen images
+                iaa.Emboss(alpha=(0, 1.0), strength=(0, 2.0)),  # emboss images
+                # search either for all edges or for directed edges,
+                # blend the result with the original image using a blobby mask
+                iaa.BlendAlphaSimplexNoise(
+                    iaa.OneOf([
+                        iaa.EdgeDetect(alpha=(0.5, 1.0)),
+                        iaa.DirectedEdgeDetect(alpha=(0.5, 1.0),
+                                               direction=(0.0, 1.0)),
+                    ])),
+                iaa.AdditiveGaussianNoise(
+                    loc=0, scale=(0.0, 0.05 * 255),
+                    per_channel=0.5),  # add gaussian noise to images
+                iaa.OneOf([
+                    iaa.Dropout((0.01, 0.1), per_channel=0.5
+                                ),  # randomly remove up to 10% of the pixels
+                    iaa.CoarseDropout((0.03, 0.15),
+                                      size_percent=(0.02, 0.05),
+                                      per_channel=0.2),
+                ]),
+                iaa.Invert(0.05, per_channel=True),  # invert color channels
+                iaa.Add(
+                    (-10, 10), per_channel=0.5
+                ),  # change brightness of images (by -10 to 10 of original value)
+                iaa.AddToHueAndSaturation(
+                    (-20, 20)),  # change hue and saturation
+                # either change the brightness of the whole image (sometimes
+                # per channel) or change the brightness of subareas
+                iaa.OneOf([
+                    iaa.Multiply((0.5, 1.5), per_channel=0.5),
+                    iaa.BlendAlphaFrequencyNoise(
+                        exponent=(-4, 0),
+                        foreground=iaa.Multiply((0.5, 1.5), per_channel=True),
+                        background=iaa.LinearContrast((0.5, 2.0)))
+                ]),
+                iaa.LinearContrast(
+                    (0.5, 2.0),
+                    per_channel=0.5),  # improve or worsen the contrast
+                iaa.Grayscale(alpha=(0.0, 1.0)),
+                sometimes(
+                    iaa.ElasticTransformation(alpha=(0.5, 3.5), sigma=0.25)
+                ),  # move pixels locally around (with random strengths)
+                sometimes(iaa.PiecewiseAffine(scale=(
+                    0.01, 0.05))),  # sometimes move parts of the image around
+                sometimes(iaa.PerspectiveTransform(scale=(0.01, 0.1)))
+            ],
+            random_order=True)
     ],
-    random_state=True)
+    random_order=True)
 
 
 class BasicDataset(torch.utils.data.Dataset):
@@ -92,17 +157,17 @@ class BasicDataset(torch.utils.data.Dataset):
 
         if self.rect:
             scale = min(self.img_size[0] / w, self.img_size[1] / h)
-            resize = ia.Sequential([
-                ia.Resize({
+            resize = iaa.Sequential([
+                iaa.Resize({
                     'width': int(w * scale),
                     'height': int(h * scale)
                 }),
-                ia.PadToFixedSize(*self.img_size,
-                                  pad_cval=[123.675, 116.28, 103.53],
-                                  position='center')
+                iaa.PadToFixedSize(*self.img_size,
+                                   pad_cval=[123.675, 116.28, 103.53],
+                                   position='center')
             ])
         else:
-            resize = ia.Resize({
+            resize = iaa.Resize({
                 'width': self.img_size[0],
                 'height': self.img_size[1]
             })
@@ -111,23 +176,26 @@ class BasicDataset(torch.utils.data.Dataset):
         polygons = resize.augment_polygons(polygons)
         # augment
         if self.augments is not None:
-            augments = self.augments.to_deterministic()
-            img = augments.augment_image(img)
-            polygons = augments.augment_polygons(polygons)
+            if (self.mosaic and random.random() < 0.3) or (not self.mosaic and random.random() < 0.5):
+                augments = self.augments.to_deterministic()
+                img = augments.augment_image(img)
+                polygons = augments.augment_polygons(polygons)
 
         labels = []
         for polygon in polygons.polygons:
             p = polygon.exterior.reshape(-1, 2)
             p[:, 0] /= img.shape[1]
             p[:, 1] /= img.shape[0]
-            p = p.clip(0, 1)
+            # p = p.clip(0, 1)
+            if p.min() < 0 or p.max() > 1:
+                continue
             c = polygon.label
             labels.append([0, c] + p.reshape(-1).tolist())
         if len(labels):
             labels = np.float32(labels)
         else:
             labels = np.zeros([0, 10], dtype=np.float32)
-        if self.mosaic and mosaic:
+        if self.mosaic and mosaic and random.random() < 0.2:
             mosaic_list = [(img, labels)]
             for _ in range(3):
                 next_idx = random.randint(0, self.__len__() - 1)
@@ -145,17 +213,17 @@ class BasicDataset(torch.utils.data.Dataset):
             img2 = np.concatenate([img2, img3], 1)
             img = np.concatenate([img0, img2], 0)
             labels0 = mosaic_list[0][1]
-            labels0[:, 2] = labels0[:, 2].clip(0, cut_x_ratio)
-            labels0[:, 3] = labels0[:, 3].clip(0, cut_y_ratio)
+            labels0 = labels0[labels0[:, 2::2].max(1) < cut_x_ratio]
+            labels0 = labels0[labels0[:, 3::2].max(1) < cut_y_ratio]
             labels1 = mosaic_list[1][1]
-            labels1[:, 2] = labels1[:, 2].clip(cut_x_ratio, 1)
-            labels1[:, 3] = labels1[:, 3].clip(0, cut_y_ratio)
+            labels1 = labels1[labels1[:, 2::2].min(1) > cut_x_ratio]
+            labels1 = labels1[labels1[:, 3::2].max(1) < cut_y_ratio]
             labels2 = mosaic_list[2][1]
-            labels2[:, 2] = labels2[:, 2].clip(0, cut_x_ratio)
-            labels2[:, 3] = labels2[:, 3].clip(cut_y_ratio, 1)
+            labels2 = labels2[labels2[:, 2::2].max(1) < cut_x_ratio]
+            labels2 = labels2[labels2[:, 3::2].min(1) > cut_y_ratio]
             labels3 = mosaic_list[3][1]
-            labels3[:, 2] = labels3[:, 2].clip(cut_x_ratio, 1)
-            labels3[:, 3] = labels3[:, 3].clip(cut_y_ratio, 1)
+            labels3 = labels3[labels3[:, 2::2].min(1) > cut_x_ratio]
+            labels3 = labels3[labels3[:, 3::2].min(1) > cut_y_ratio]
             labels = np.concatenate([labels0, labels1, labels2, labels3], 0)
         # filter small items
         labels = labels[labels[:, 2::2].max(1) - labels[:, 2::2].min(1) > 3e-3]
@@ -186,6 +254,7 @@ class BasicDataset(torch.utils.data.Dataset):
         labels = np.stack([labels[:, 0], labels[:, 1], x, y, w, h, theta], 1)
         # print(labels[:, 4].mean() * 416, labels[:, 5].mean() * 416)
         labels[:, -1] /= 180. / np.pi
+        # labels[:, -1] = 0
         return img, labels
 
     def __len__(self):

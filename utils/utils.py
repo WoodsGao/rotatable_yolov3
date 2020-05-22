@@ -13,10 +13,10 @@ from pytorch_modules.nn import FocalBCELoss
 
 
 def angle_loss(x, period=math.pi):
-    x %= period
-    x[x > period / 2.] *= -1
-    x[x < 0] += period
-    return x
+    # x %= period
+    # x[x > period / 2.] *= -1
+    # x[x < 0] += period
+    return 1 - x.cos()
 
 
 def xyxy2xywh(x):
@@ -50,10 +50,8 @@ def scale_coords(img1_shape, coords, img0_shape):
 
 
 def clip_coords(poly, img_shape):
-    poly[:, 0:8:2] = poly[:, 0:8:2].clamp(min=0,
-                                              max=img_shape[1])  # clip x
-    poly[:, 1:8:2] = poly[:, 1:8:2].clamp(min=0,
-                                              max=img_shape[0])  # clip y
+    poly[:, 0:8:2] = poly[:, 0:8:2].clamp(min=0, max=img_shape[1])  # clip x
+    poly[:, 1:8:2] = poly[:, 1:8:2].clamp(min=0, max=img_shape[0])  # clip y
 
 
 def ap_per_class(tp, conf, pred_cls, target_cls):
@@ -154,9 +152,9 @@ def compute_ap(recall, precision):
 
 def polygon_iou(polygon1, polygon2):
     iou = torch.zeros(len(polygon2)).to(polygon2.device)
-    poly1 = Polygon(polygon1.cpu().numpy()[:8].reshape(4, 2)).convex_hull
+    poly1 = Polygon(polygon1.detach().cpu().numpy()[:8].reshape(4, 2)).convex_hull
     for i, poly in enumerate(polygon2):
-        poly2 = Polygon(poly.cpu().numpy()[:8].reshape(4, 2)).convex_hull
+        poly2 = Polygon(poly.detach().cpu().numpy()[:8].reshape(4, 2)).convex_hull
         inter_area = poly1.intersection(poly2).area
         union_area = poly1.area + poly2.area - inter_area
         iou[i] = inter_area / (union_area + 1e-5)
@@ -311,7 +309,8 @@ def compute_loss(p, targets, model):  # predictions, targets, model
     tcls, tbox, indices, anchor_vec, ttheta = build_targets(model, targets)
     # Define criteria
     BCE = nn.BCELoss()
-    BCE = FocalBCELoss()
+    # BCE = FocalBCELoss()
+    MSE = nn.MSELoss()
     # Compute losses
     for i, pi in enumerate(p):  # layer index, layer predictions
         b, a, gj, gi = indices[i]  # image, anchor, gridy, gridx
@@ -326,20 +325,32 @@ def compute_loss(p, targets, model):  # predictions, targets, model
 
             # GIoU
             pxy = torch.sigmoid(ps[:, 0:2])
-            pbox = torch.cat(
-                (pxy, ps[:, 2:4].exp() * anchor_vec[i]),
-                1)  # predicted box
+            pbox = torch.cat((pxy, ps[:, 2:4].exp() * anchor_vec[i]),
+                             1)  # predicted box
+
+            true_points = xywht2polygon(
+                torch.cat([tbox[i], ttheta[i].unsqueeze(1)], 1).t())
+            pred_points = xywht2polygon(torch.cat([pbox, ps[:, -1:]], 1).t())
+            iou = []
+            for ppi in range(len(pred_points)):
+                iou.append(
+                    polygon_iou(pred_points[ppi], true_points[ppi:ppi + 1]))
+            iou = torch.cat(iou)
+            # iou = -iou.log()
+            iou = (iou * np.pi * 0.5).cos()
+            # print(iou.shape)
+
             giou = bbox_iou(pbox.t(), tbox[i], x1y1x2y2=False,
                             GIoU=True)  # giou computation
-            lbox += (1.0 - giou).mean()  # giou loss
+            lbox += ((1.0 - giou) * iou).mean()  # giou loss
+            # lbox += (1.0 - giou).mean()
 
             # radius = w^2+h^2
             # 长宽中找到最近的一点 也就是计算-cos(theta)和-cos(theta_wh-theta)和-cos(pi-theta_wh-theta)的最小值
             l2 = angle_loss(ps[:, -1] - ttheta[i])
-            # true_points = xywht2polygon(
-            #     torch.cat([tbox[i], ttheta[i].unsqueeze(1)], 1).t())
-            # pred_points = xywht2polygon(
-            #     torch.cat([tbox[i], ps[:, -1:]], 1).t())
+            lt += (l2 * iou).mean()
+            # lt += l2.mean()
+
             # # print(true_points[0], pred_points.unsqueeze(1).repeat(1, 4, 1, 1).permute(0, 2, 1, 3)[0])
             # l2 = (pred_points.unsqueeze(1).repeat(1, 4, 1, 1).permute(
             #     0, 2, 1, 3) - true_points.unsqueeze(1))
@@ -348,14 +359,18 @@ def compute_loss(p, targets, model):  # predictions, targets, model
             # solution = ft(solution)
             # l2 *= solution
             # l2 = l2.sum(1).sum(1)
-            lt += l2.mean()
-            # print(l2.shape)
+            # # print(l2.shape)
+            # # lt += (l2 * iou).mean() / 5.
+            # lt += l2.mean() / 5.
+
             t = torch.zeros_like(ps[:, 5:-1])  # targets
             t[range(nb), tcls[i]] = 1.0
             lcls += BCE(ps[:, 5:-1].sigmoid(), t).mean()  # BCE
 
-        bce = BCE(pi[..., 4].sigmoid(), tobj)
-        lobj += bce  # obj loss
+            lobj += BCE(pi[..., 4].sigmoid(), tobj) * iou.mean()
+        else:
+            lobj += BCE(pi[..., 4].sigmoid(), tobj)
+        # lobj += MSE(pi[..., 4].sigmoid(), tobj)
 
     lbox *= 3.54
     lobj *= 64.3

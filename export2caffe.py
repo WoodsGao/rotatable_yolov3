@@ -34,7 +34,7 @@ if __name__ == "__main__":
     img_size = opt.img_size.split(',')
     assert len(img_size) in [1, 2]
     if len(img_size) == 1:
-        img_size = [int(img_size[0])] * 2
+        img_size = [int(img_size[0]), int(img_size[0])]
     else:
         img_size = [int(x) for x in img_size]
     export2caffe(opt.weights, opt.num_classes, img_size)

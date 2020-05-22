@@ -1,14 +1,14 @@
-# pytorch_detection
+# rotatable yolov3
 
 ## Introduction
 
-Implementation of some detection models with pytorch, including YOLOV3, etc.
+A rotatable yolov3 model which can regress the angle of the bounding box
 
 ## Features
 
  - Advanced neural network models
  - Flexible and efficient toolkit(See [woodsgao/pytorch_modules](https://github.com/woodsgao/pytorch_modules))
- - Online data augmenting(by imgaug)
+ - Online data augmenting(By imgaug)
  - Mixed precision training(If you have already installed [apex](https://github.com/NVIDIA/apex))
  - Efficient distributed training(0.8x faster when using two 2080ti)
  - Add a script to convert to caffe model(By [woodsgao/pytorch2caffe](https://github.com/woodsgao/pytorch2caffe))
@@ -37,23 +37,20 @@ You can use `split_coco_json.py` from [woodsgao/cv_utils](https://github.com/woo
 
 ### Training
 
-    python3 train.py --data data/<custom>
+    python3 train.py data/<custom>
 
 ### Distributed Training
 
-Run the following command in all nodes.Every node will save your weights
-    python3 train.py --data data/<custom>
-Or in distributed
-    python3 -m torch.distributed.launch --nproc_per_node=<nproc> train.py --data data/<custom>
+    python3 -m torch.distributed.launch --nproc_per_node=<nproc> train.py data/<custom>
 
 ### Testing
 
-    python3 test.py --val-list /data/<custom>/val.json
+    python3 test.py /data/<custom>/val.json
 
 ### Inference
 
-    python3 inference.py --img-dir data/samples
+    python3 inference.py data/samples
 
 ### Export to caffe model
 
-    python3 export2caffe.py weights/best.pt --num-classes 21 --img-size 512,512
+    python3 export2caffe.py weights/best.pt --num-classes 21 --img-size 416

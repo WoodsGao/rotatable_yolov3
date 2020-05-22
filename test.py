@@ -129,8 +129,9 @@ def test(model, fetcher, conf_thres=1e-3, nms_thres=0.5):
                 stat_list[si][:ls_list[si]]
                 for si in range(dist.get_world_size()) if ls_list[si] > 0
             ]
-            stat = torch.cat(stat_list)
-            stats[i] = stat.cpu().numpy()
+            if len(stat_list) > 0:
+                stat = torch.cat(stat_list)
+                stats[i] = stat.cpu().numpy()
 
     if len(stats):
         p, r, ap, f1, ap_class = ap_per_class(*stats)
