@@ -95,7 +95,7 @@ def train(data_dir,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default='data/voc')
+    parser.add_argument('data', type=str, default='data/voc')
     parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--img-size', type=str, default='416')
     parser.add_argument('-bs', '--batch-size', type=int, default=4)

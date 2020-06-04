@@ -164,13 +164,9 @@ if __name__ == '__main__':
     parser.add_argument('--batch-size', type=int, default=4)
     parser.add_argument('--weights', type=str, default='')
     parser.add_argument('--num-workers', type=int, default=4)
-    parser.add_argument('--iou-thres',
-                        type=float,
-                        default=0.5,
-                        help='iou threshold required to qualify as detected')
     parser.add_argument('--conf-thres',
                         type=float,
-                        default=0.001,
+                        default=0.1,
                         help='object confidence threshold')
     parser.add_argument('--nms-thres',
                         type=float,
@@ -185,15 +181,16 @@ if __name__ == '__main__':
     else:
         img_size = [int(x) for x in img_size]
 
-    val_data = CocoDataset(opt.val_list, img_size=tuple(img_size))
+    val_data = CocoDataset(opt.val_list, img_size=tuple(img_size), augment=None)
     val_loader = DataLoader(
         val_data,
         batch_size=opt.batch_size,
         pin_memory=True,
         num_workers=opt.num_workers,
+        collate_fn=CocoDataset.collate_fn,
     )
     val_fetcher = Fetcher(val_loader, post_fetch_fn=val_data.post_fetch_fn)
-    model = YOLOV3(80)
+    model = YOLOV3(len(val_data.classes))
     if opt.weights:
         state_dict = torch.load(opt.weights, map_location='cpu')
         model.load_state_dict(state_dict['model'])
