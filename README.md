@@ -45,7 +45,7 @@ You can use `split_coco_json.py` from [woodsgao/cv_utils](https://github.com/woo
 
 ### Testing
 
-    python3 test.py data/<custom>/val.json
+    python3 test.py data/<custom>/val.json --weights weights.pth
 
 ### Inference
 

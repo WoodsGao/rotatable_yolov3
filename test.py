@@ -180,9 +180,9 @@ if __name__ == '__main__':
     opt = parser.parse_args()
 
     val_data = CocoDataset(opt.val,
-                          img_size=opt.img_size,
-                          augments=None,
-                          rect=opt.rect)
+                           img_size=opt.img_size,
+                           augments=None,
+                           rect=opt.rect)
     val_loader = DataLoader(
         val_data,
         batch_size=opt.batch_size,

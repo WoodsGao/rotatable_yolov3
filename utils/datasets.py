@@ -129,9 +129,6 @@ class BasicDataset(torch.utils.data.Dataset):
     def __init__(self, img_size, augments, multi_scale, rect, with_label,
                  mosaic):
         super(BasicDataset, self).__init__()
-        if isinstance(img_size, int):
-            img_size = (img_size, img_size)
-        assert len(img_size) == 2
         self.img_size = img_size
         self.rect = rect
         self.multi_scale = multi_scale
