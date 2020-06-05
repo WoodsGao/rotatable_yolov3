@@ -159,10 +159,15 @@ def test(model, fetcher, conf_thres=1e-3, nms_thres=0.5):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--val-list', type=str, default='data/voc/valid.txt')
-    parser.add_argument('--img-size', type=str, default='512')
-    parser.add_argument('--batch-size', type=int, default=4)
+    parser.add_argument('val', type=str)
     parser.add_argument('--weights', type=str, default='')
+    parser.add_argument('--rect', action='store_true')
+    parser.add_argument('-s',
+                        '--img_size',
+                        type=int,
+                        nargs=2,
+                        default=[416, 416])
+    parser.add_argument('-bs', '--batch-size', type=int, default=32)
     parser.add_argument('--num-workers', type=int, default=4)
     parser.add_argument('--conf-thres',
                         type=float,
@@ -174,14 +179,10 @@ if __name__ == '__main__':
                         help='iou threshold for non-maximum suppression')
     opt = parser.parse_args()
 
-    img_size = opt.img_size.split(',')
-    assert len(img_size) in [1, 2]
-    if len(img_size) == 1:
-        img_size = [int(img_size[0])] * 2
-    else:
-        img_size = [int(x) for x in img_size]
-
-    val_data = CocoDataset(opt.val_list, img_size=tuple(img_size), augment=None)
+    val_data = CocoDataset(opt.val,
+                          img_size=opt.img_size,
+                          augments=None,
+                          rect=opt.rect)
     val_loader = DataLoader(
         val_data,
         batch_size=opt.batch_size,

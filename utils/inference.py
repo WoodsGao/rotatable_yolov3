@@ -1,7 +1,9 @@
-import numpy as np
 import cv2
+import numpy as np
 import torch
+
 from pytorch_modules.utils import device
+
 from .utils import non_max_suppression, scale_coords
 
 

@@ -14,21 +14,9 @@ from utils.datasets import CocoDataset
 from utils.utils import compute_loss
 
 
-def train(data_dir,
-          epochs=100,
-          img_size=(416, 416),
-          batch_size=8,
-          accumulate=2,
-          lr=1e-3,
-          adam=False,
-          resume=False,
-          weights='',
-          num_workers=0,
-          multi_scale=False,
-          rect=False,
-          mixed_precision=False,
-          notest=False,
-          nosave=False):
+def train(data_dir, epochs, img_size, batch_size, accumulate, lr, adam, resume,
+          weights, num_workers, multi_scale, rect, mixed_precision, notest,
+          nosave):
     train_coco = osp.join(data_dir, 'train.json')
     val_coco = osp.join(data_dir, 'val.json')
 
@@ -97,9 +85,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('data', type=str, default='data/voc')
     parser.add_argument('--epochs', type=int, default=100)
-    parser.add_argument('--img-size', type=str, default='416')
-    parser.add_argument('-bs', '--batch-size', type=int, default=4)
-    parser.add_argument('-a', '--accumulate', type=int, default=8)
+    parser.add_argument('-s',
+                        '--img_size',
+                        type=int,
+                        nargs=2,
+                        default=[416, 416])
+    parser.add_argument('-bs', '--batch-size', type=int, default=32)
+    parser.add_argument('-a', '--accumulate', type=int, default=2)
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--adam', action='store_true')
     parser.add_argument('--resume', action='store_true')
@@ -130,16 +122,10 @@ if __name__ == "__main__":
     if opt.local_rank > 0:
         sys.stdout = open(os.devnull, 'w')
     print(opt)
-    img_size = opt.img_size.split(',')
-    assert len(img_size) in [1, 2]
-    if len(img_size) == 1:
-        img_size = [int(img_size[0]), int(img_size[0])]
-    else:
-        img_size = [int(x) for x in img_size]
 
     train(data_dir=opt.data,
           epochs=opt.epochs,
-          img_size=img_size,
+          img_size=opt.img_size,
           batch_size=opt.batch_size,
           accumulate=opt.accumulate,
           lr=opt.lr,

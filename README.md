@@ -45,7 +45,7 @@ You can use `split_coco_json.py` from [woodsgao/cv_utils](https://github.com/woo
 
 ### Testing
 
-    python3 test.py /data/<custom>/val.json
+    python3 test.py data/<custom>/val.json
 
 ### Inference
 
@@ -53,4 +53,4 @@ You can use `split_coco_json.py` from [woodsgao/cv_utils](https://github.com/woo
 
 ### Export to caffe model
 
-    python3 export2caffe.py weights/best.pt --num-classes 21 --img-size 416
+    python3 export2caffe.py weights/best.pt -nc 21 -s 416 416
