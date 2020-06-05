@@ -49,7 +49,7 @@ You can use `split_coco_json.py` from [woodsgao/cv_utils](https://github.com/woo
 
 ### Inference
 
-    python3 inference.py data/samples outputs
+    python3 inference.py data/samples outputs --weights weights.pth
 
 ### Export to caffe model
 
