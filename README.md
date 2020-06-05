@@ -15,8 +15,8 @@ A rotatable yolov3 model which can regress the angle of the bounding box
 
 ## Installation
 
-    git clone https://github.com/woodsgao/pytorch_detection
-    cd pytorch_detection
+    git clone https://github.com/woodsgao/rotatable_yolov3
+    cd rotatable_yolov3
     pip install -r requirements.txt
 
 ## Tutorials
@@ -49,7 +49,7 @@ You can use `split_coco_json.py` from [woodsgao/cv_utils](https://github.com/woo
 
 ### Inference
 
-    python3 inference.py data/samples
+    python3 inference.py data/samples outputs
 
 ### Export to caffe model
 
