@@ -14,7 +14,7 @@ class SPP(nn.Module):
         for pool in self.pools:
             features.append(pool(x))
         if hasattr(self, 'float_functional'):
-            features = self.QF.cat(features, 1)
+            features = self.float_functional.cat(features, 1)
         else:
             features = torch.cat(features, 1)
         return features
